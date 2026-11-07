@@ -1,15 +1,15 @@
 # FaithFrame Renderer
 
-External FFmpeg rendering worker for Gospel Inspiration, connected to the existing FaithFrame Studio dashboard and Hatchable storage.
+External FFmpeg rendering worker for Gospel Inspiration. The FaithFrame Studio dashboard, database, permanent media storage and YouTube publishing remain in the original private Hatchable project.
 
 ## Workflows
 
-- **FFmpeg Short Render Test** creates synthetic media and renders a sample 9:16 MP4. It is safe to run for visual checks and produces a short-lived sample artifact.
-- **FFmpeg Short Production Render** accepts only an opaque Hatchable draft ID. The runner authenticates to Hatchable, downloads private source assets directly to the temporary GitHub runner, renders the Short, and returns the MP4 to the existing Hatchable storage.
+- **FFmpeg Short Render Test** creates synthetic media and renders a sample 9:16 MP4. It also checks the Python worker and the production long-script caption timing logic.
+- **FFmpeg Short Production Render** accepts only an opaque Short draft ID. It retrieves private task metadata from a separate API-only bridge, downloads the original media from short-lived signed storage links, renders the MP4 on GitHub Actions, then returns the MP4 to the bridge for collection into the original FaithFrame Studio storage.
 
-The production workflow does not upload private videos as GitHub artifacts. It does not put media URLs, signed URLs, or credentials in workflow inputs. The workflow input is only a task ID; a separate secret authorizes the media handoff.
+The bridge has no dashboard or public media library. Its API endpoints are protected by a high-entropy bearer token. The main FaithFrame Studio dashboard remains private.
 
-## Test the renderer
+## Run the renderer test
 
 1. Open the **Actions** tab.
 2. Select **FFmpeg Short Render Test**.
@@ -18,20 +18,25 @@ The production workflow does not upload private videos as GitHub artifacts. It d
 
 The output should be a 720×1280 portrait MP4 with H.264 video and AAC audio.
 
-## Production connection prerequisites
+## Production connection
 
-The production workflow is staged but must not be used until the Hatchable endpoints are deployed and both sides have matching credentials.
+Do not enable production dispatch until the API-only bridge has been switched to public visibility in Hatchable Settings and the same random token has been saved in the bridge, the private studio and GitHub Actions Secrets.
 
-- Add the repository secret `FFMPEG_WORKER_TOKEN` in **Settings → Secrets and variables → Actions**.
-- Add the same `FFMPEG_WORKER_TOKEN` value in Hatchable project secrets.
-- Add `GITHUB_ACTIONS_TOKEN` in Hatchable project secrets. It must be a fine-grained GitHub token scoped to this repository with **Actions: Read and write** permission so Hatchable can dispatch the workflow.
-- Never commit any of these values or place them in workflow inputs, run logs, or artifacts.
+- In the private **Daily AI YouTube Shorts Studio** project, set:
+  - `GITHUB_ACTIONS_TOKEN`: fine-grained GitHub token restricted to `HEAVENWRLD/faithframe-renderer` with **Actions: Read and write** permission.
+  - `FFMPEG_WORKER_TOKEN`: high-entropy shared bearer token.
+  - `FFMPEG_RELAY_URL`: `https://faithframe-render.hatchable.site/api`.
+  - `FFMPEG_EXTERNAL_RENDER_ENABLED`: set to `true` only after the other configuration is complete.
+- In the **FaithFrame Render Bridge** project, set the same `FFMPEG_WORKER_TOKEN`.
+- In GitHub repository **Settings → Secrets and variables → Actions**, set the same `FFMPEG_WORKER_TOKEN`.
 
-Hatchable remains responsible for the dashboard, database, private media storage, and YouTube publishing. The existing renderer remains the fallback until the external path has passed an end-to-end production test.
+Never put the signed media URLs or bearer token in workflow inputs, logs, or artifacts. The workflow input contains only the opaque draft ID. The production workflow does not upload private media as an Actions artifact.
+
+The bridge stores the returned MP4 temporarily. The original private studio downloads it, saves it in its existing storage, and then acknowledges deletion of the temporary bridge copy. The existing YouTube upload job is still responsible for publishing.
 
 ## Renderer manifest
 
-`renderer/render_short.py` accepts a local JSON manifest with these fields:
+`renderer/render_short.py` accepts a local JSON manifest with:
 
 - `title`: video title shown at the beginning.
 - `scenes`: 4–30 local image paths, in display order.
@@ -41,12 +46,11 @@ Hatchable remains responsible for the dashboard, database, private media storage
 - `outro`: optional local outro image or SVG path.
 - `output`: output MP4 path (optional).
 
-The renderer handles Hatchable's current single-block script captions by splitting them into short, timed phrases based on the actual narration duration. It downloads no remote URLs and reads no credentials; the authenticated worker handles private downloads before invoking it.
+Hatchable currently stores the full script as a single caption block. The renderer splits that into readable, timed phrases based on the actual narration duration.
 
 ## Security
 
-- Never commit videos, narration, music, generated images, private media URLs, API keys, access tokens, or environment files.
-- Keep all credentials in Hatchable project secrets or GitHub Actions Secrets.
+- Never commit videos, narration, music, generated images, signed storage URLs, API keys, access tokens, or environment files.
+- Keep credentials in Hatchable project secrets or GitHub Actions Secrets.
 - Workflows must not execute untrusted pull-request code with secrets.
-- Do not put signed storage URLs or secret values in workflow inputs, artifacts, or logs.
-- The production workflow is manual-dispatch only and accepts an opaque task ID.
+- The main studio and its permanent storage remain private.
