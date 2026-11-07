@@ -6,7 +6,7 @@ External FFmpeg rendering worker for Gospel Inspiration. The FaithFrame Studio d
 
 **FFmpeg Short Production Render** accepts only an opaque Short draft ID. It retrieves private task metadata from a separate API-only bridge, downloads the original media from short-lived signed storage links, renders the MP4 on GitHub Actions, then returns the MP4 to the bridge for collection into the original FaithFrame Studio storage.
 
-The synthetic FFmpeg sample workflow has been removed after its successful end-to-end codec and MP4 validation. Production rendering never uploads private media as a GitHub Actions artifact.
+The temporary synthetic sample workflow has been removed after it verified the renderer's MP4 encoding and sample caption timing. That test used generated media only; the production worker-to-bridge return path still requires the private bridge and shared secrets to be configured. Production rendering never uploads private media as a GitHub Actions artifact.
 
 The bridge has no dashboard or public media library. Its API endpoints are protected by a high-entropy bearer token. The main FaithFrame Studio dashboard remains private.
 
