@@ -180,18 +180,18 @@ def format_srt_timestamp(value: float) -> str:
 def write_normalized_srt(events: list[dict[str, Any]], destination: Path) -> None:
     blocks: list[str] = []
     for event in events:
-        text = re.sub(r"\\s+", " ", str(event.get("text", "")).strip())
+        text = re.sub(r"\s+", " ", str(event.get("text", "")).strip())
         start, end = float(event["start"]), float(event["end"])
         if not text or end <= start:
             continue
         blocks.append(
-            f"{len(blocks) + 1}\\n"
-            f"{format_srt_timestamp(start)} --> {format_srt_timestamp(end)}\\n"
+            f"{len(blocks) + 1}\n"
+            f"{format_srt_timestamp(start)} --> {format_srt_timestamp(end)}\n"
             f"{text}"
         )
     if not blocks:
         raise ValueError("No usable caption phrases remain after timing normalization.")
-    destination.write_text("\\n\\n".join(blocks) + "\\n", encoding="utf-8")
+    destination.write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
 
 
 def filter_path(path: Path) -> str:
