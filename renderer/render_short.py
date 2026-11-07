@@ -103,7 +103,7 @@ def scene_starts(count: int, captions: list[dict[str, Any]], duration: float) ->
 
 
 def split_caption_text(value: str, max_words: int = 7) -> list[str]:
-    words = re.sub(r"\\s+", " ", str(value or "")).strip().split(" ")
+    words = re.sub(r"\s+", " ", str(value or "")).strip().split(" ")
     groups: list[str] = []
     current: list[str] = []
     for word in words:
@@ -111,7 +111,7 @@ def split_caption_text(value: str, max_words: int = 7) -> list[str]:
             continue
         current.append(word)
         if len(current) >= max_words or (
-            len(current) >= 4 and re.search(r"[,.!?;:][\\"')\\u201d]*$", word)
+            len(current) >= 4 and re.search(r"[,.!?;:]$", word)
         ):
             groups.append(" ".join(current))
             current = []
@@ -124,7 +124,7 @@ def split_caption_text(value: str, max_words: int = 7) -> list[str]:
 
 
 def caption_weight(value: str) -> float:
-    words = re.findall(r"[a-z0-9\\u2019'-]+", str(value or "").lower())
+    words = re.findall(r"[a-z0-9’'-]+", str(value or "").lower())
     weight = 0.0
     for word in words:
         letters = re.sub(r"[^a-z]", "", word)
@@ -148,7 +148,7 @@ def normalize_captions(events: list[dict[str, Any]], duration: float) -> list[di
     coarse = len(events) == 1 and len(str(events[0].get("text", "")).split()) > 12
     output: list[dict[str, Any]] = []
     for event in events:
-        value = re.sub(r"\\s+", " ", str(event.get("text", "")).strip())
+        value = re.sub(r"\s+", " ", str(event.get("text", "")).strip())
         if not value:
             continue
         start = 0.0 if coarse else max(0.0, min(duration, float(event.get("start", 0))))
