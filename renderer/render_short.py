@@ -12,6 +12,7 @@ import math
 import re
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -141,9 +142,19 @@ def main() -> int:
     output_path = output_path.resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Hatchable stores its generated outro card as SVG; rasterize it before FFmpeg reads it.
+    if outro and outro.suffix.lower() == ".svg":
+        raster_outro = output_path.parent / "render-outro.png"
+        run(["rsvg-convert", "--width", str(WIDTH), "--height", str(HEIGHT),
+             "--output", str(raster_outro), str(outro)])
+        if not raster_outro.is_file() or raster_outro.stat().st_size < 1000:
+            raise RuntimeError("The SVG outro card could not be converted to PNG.")
+        outro = raster_outro
+
     title_file = output_path.parent / "render-title.txt"
     brand_file = output_path.parent / "render-brand.txt"
-    title_file.write_text(title, encoding="utf-8")
+    title_lines = textwrap.wrap(title, width=42, max_lines=2, placeholder="…") or ["A Message of Faith"]
+    title_file.write_text("\n".join(title_lines), encoding="utf-8")
     brand_file.write_text("✝  GOSPEL INSPIRATION", encoding="utf-8")
 
     command = ["ffmpeg", "-hide_banner", "-y", "-loglevel", "warning"]
