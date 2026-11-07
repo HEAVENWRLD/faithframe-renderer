@@ -102,6 +102,73 @@ def scene_starts(count: int, captions: list[dict[str, Any]], duration: float) ->
     return starts
 
 
+def split_caption_text(value: str, max_words: int = 7) -> list[str]:
+    words = re.sub(r"\\s+", " ", str(value or "")).strip().split(" ")
+    groups: list[str] = []
+    current: list[str] = []
+    for word in words:
+        if not word:
+            continue
+        current.append(word)
+        if len(current) >= max_words or (
+            len(current) >= 4 and re.search(r"[,.!?;:][\\"')\\u201d]*$", word)
+        ):
+            groups.append(" ".join(current))
+            current = []
+    if current:
+        if len(current) <= 2 and groups:
+            groups[-1] += " " + " ".join(current)
+        else:
+            groups.append(" ".join(current))
+    return groups
+
+
+def caption_weight(value: str) -> float:
+    words = re.findall(r"[a-z0-9\\u2019'-]+", str(value or "").lower())
+    weight = 0.0
+    for word in words:
+        letters = re.sub(r"[^a-z]", "", word)
+        syllables = max(1, len(re.findall(r"[aeiouy]+", letters)))
+        if letters.endswith("e") and syllables > 1 and not letters.endswith("le"):
+            syllables -= 1
+        weight += max(1, syllables)
+    ending = str(value or "").strip()[-1:]
+    if ending in ".!?":
+        weight += 2.2
+    elif ending in ";:":
+        weight += 1.2
+    elif ending == ",":
+        weight += 0.7
+    return max(1.0, weight)
+
+
+def normalize_captions(events: list[dict[str, Any]], duration: float) -> list[dict[str, Any]]:
+    # Hatchable currently stores the entire narration as one SRT cue. Split
+    # that coarse cue into short phrases and time them across the real audio.
+    coarse = len(events) == 1 and len(str(events[0].get("text", "")).split()) > 12
+    output: list[dict[str, Any]] = []
+    for event in events:
+        value = re.sub(r"\\s+", " ", str(event.get("text", "")).strip())
+        if not value:
+            continue
+        start = 0.0 if coarse else max(0.0, min(duration, float(event.get("start", 0))))
+        raw_end = float(event.get("end", 0))
+        end = duration if coarse else max(start + 0.1, min(duration, raw_end if raw_end > start else duration))
+        groups = split_caption_text(value)
+        weights = [caption_weight(group) for group in groups]
+        total_weight = sum(weights) or 1.0
+        cursor = start
+        for index, group in enumerate(groups):
+            next_time = end if index == len(groups) - 1 else cursor + (end - start) * weights[index] / total_weight
+            output.append({
+                "start": max(0.0, min(duration, cursor)),
+                "end": max(0.0, min(duration, max(cursor + 0.12, next_time))),
+                "text": group,
+            })
+            cursor = next_time
+    return [item for item in output if item["end"] > item["start"] and item["text"]]
+
+
 def filter_path(path: Path) -> str:
     return str(path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
@@ -131,7 +198,7 @@ def main() -> int:
 
     title = str(manifest.get("title") or "A Message of Faith").replace("\n", " ").replace("\r", " ")[:120]
     narration_duration = probe_duration(narration)
-    captions = parse_srt(srt)
+    captions = normalize_captions(parse_srt(srt), narration_duration)
     starts = scene_starts(len(scenes), captions, narration_duration)
     total_duration = narration_duration + OUTRO_SECONDS
 
