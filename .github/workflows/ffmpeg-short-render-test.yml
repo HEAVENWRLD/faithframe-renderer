@@ -23,7 +23,7 @@ jobs:
       - name: Install FFmpeg and fonts
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ffmpeg fonts-dejavu-core
+          sudo apt-get install --yes ffmpeg fonts-dejavu-core librsvg2-bin
           ffmpeg -version
           ffprobe -version
 
