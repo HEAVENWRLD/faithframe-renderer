@@ -1,0 +1,109 @@
+name: FFmpeg Short Render Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ffmpeg-short-render-test-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  render-test:
+    name: Render a sample Gospel Inspiration Short
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out renderer
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg and fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg fonts-dejavu-core
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Create synthetic test media
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p testdata/assets testdata/output
+          FONT=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
+
+          for scene in 1 2 3 4; do
+            hue=$((scene * 55))
+            ffmpeg -hide_banner -loglevel error -y \
+              -f lavfi -i "testsrc2=size=720x1280:rate=1" \
+              -vf "hue=h=$hue,drawtext=fontfile=$FONT:text='SCENE $scene':fontcolor=white:fontsize=64:x=(w-text_w)/2:y=(h-text_h)/2" \
+              -frames:v 1 "testdata/assets/scene-$scene.png"
+          done
+
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i "sine=frequency=220:sample_rate=48000:duration=12" \
+            -c:a pcm_s16le testdata/assets/narration.wav
+
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i "sine=frequency=110:sample_rate=48000:duration=4" \
+            -c:a pcm_s16le testdata/assets/music.wav
+
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i "color=c=0x070913:s=720x1280:r=1" \
+            -vf "drawtext=fontfile=$FONT:text='GOSPEL INSPIRATION':fontcolor=#9beef1:fontsize=30:x=(w-text_w)/2:y=390,drawtext=fontfile=$FONT:text='PLEASE SUBSCRIBE':fontcolor=white:fontsize=54:x=(w-text_w)/2:y=560,drawtext=fontfile=$FONT:text='May God bless you':fontcolor=#ffe6aa:fontsize=30:x=(w-text_w)/2:y=680" \
+            -frames:v 1 testdata/assets/outro.png
+
+          cat > testdata/assets/captions.srt <<'SRT'
+          1
+          00:00:00,000 --> 00:00:03,000
+          God is with you through every season.
+
+          2
+          00:00:03,000 --> 00:00:06,000
+          Keep trusting even when the road feels uncertain.
+
+          3
+          00:00:06,000 --> 00:00:09,000
+          His grace gives you strength for today.
+
+          4
+          00:00:09,000 --> 00:00:12,000
+          Walk forward in faith and hope.
+          SRT
+
+          cat > testdata/manifest.json <<'JSON'
+          {
+            "title": "Trust God Through Every Season",
+            "scenes": [
+              "assets/scene-1.png",
+              "assets/scene-2.png",
+              "assets/scene-3.png",
+              "assets/scene-4.png"
+            ],
+            "narration": "assets/narration.wav",
+            "music": "assets/music.wav",
+            "captions_srt": "assets/captions.srt",
+            "outro": "assets/outro.png",
+            "output": "output/gospel-inspiration-sample.mp4"
+          }
+          JSON
+
+      - name: Render the vertical Short
+        run: python3 renderer/render_short.py --manifest testdata/manifest.json
+
+      - name: Verify output with ffprobe
+        run: |
+          set -euo pipefail
+          ffprobe -v error \
+            -show_entries format=duration,size:stream=codec_name,width,height \
+            -of json testdata/output/gospel-inspiration-sample.mp4
+
+      - name: Upload the rendered sample
+        uses: actions/upload-artifact@v4
+        with:
+          name: gospel-inspiration-render-test
+          path: testdata/output/gospel-inspiration-sample.mp4
+          if-no-files-found: error
+          retention-days: 1
