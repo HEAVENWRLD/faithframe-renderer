@@ -1,0 +1,43 @@
+name: FFmpeg Short Production Render
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: Opaque Hatchable Short draft ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faithframe-short-${{ inputs.task_id }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    name: Render and return one private Gospel Inspiration Short
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out the renderer
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg and font support
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg fonts-dejavu-core librsvg2-bin
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Render the private task and return the MP4 to Hatchable
+        env:
+          RENDER_TASK_ID: ${{ inputs.task_id }}
+          HATCHABLE_API_BASE_URL: https://daily-ai-youtube.hatchable.site/api
+          FFMPEG_WORKER_TOKEN: ${{ secrets.FFMPEG_WORKER_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$FFMPEG_WORKER_TOKEN"
+          python3 renderer/worker.py --task-id "$RENDER_TASK_ID"
