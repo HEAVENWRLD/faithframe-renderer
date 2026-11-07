@@ -1,0 +1,27 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Rendered media and source assets: keep these out of this public repository
+*.mp4
+*.webm
+*.mov
+*.mp3
+*.wav
+*.m4a
+*.aac
+*.flac
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.svg
+
+# Local renderer work directories
+renderer/input/
+renderer/output/
+testdata/assets/
+testdata/output/
