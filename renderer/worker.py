@@ -160,7 +160,7 @@ def main() -> int:
         raise RuntimeError("HATCHABLE_API_BASE_URL must be an HTTPS address.")
 
     print("Requesting the private Short render task from Hatchable.")
-    task = api_request(api_base + "/renderer/task", token, {"taskId": task_id})
+    task = api_request(api_base + "/tasks/get", token, {"taskId": task_id})
     if str(task.get("taskId", "")) != task_id:
         raise RuntimeError("Hatchable returned a different render task ID.")
 
@@ -227,7 +227,7 @@ def main() -> int:
         )
         print("FFmpeg render passed its MP4, codec, size and duration checks.")
 
-        result_url = api_base + "/renderer/result"
+        result_url = api_base + "/tasks/submit"
         saved = upload_result(result_url, token, task_id, output_path)
         print(
             "Hatchable saved the completed Short.",
