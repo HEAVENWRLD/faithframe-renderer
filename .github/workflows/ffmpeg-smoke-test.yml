@@ -1,0 +1,58 @@
+name: FFmpeg Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ffmpeg-smoke-test-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke-test:
+    name: Render a synthetic sample
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out renderer repository
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+
+      - name: Verify FFmpeg installation
+        run: |
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Render a five-second synthetic sample
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output
+
+          ffmpeg -hide_banner -y \
+            -f lavfi -i "testsrc2=size=480x854:rate=24" \
+            -f lavfi -i "sine=frequency=440:sample_rate=48000" \
+            -t 5 -shortest \
+            -c:v libx264 -preset veryfast -crf 28 -pix_fmt yuv420p \
+            -c:a aac -b:a 96k -movflags +faststart \
+            output/renderer-smoke-test.mp4
+
+          test -s output/renderer-smoke-test.mp4
+          ffprobe -v error \
+            -show_entries format=duration,size:stream=codec_name,width,height \
+            -of json output/renderer-smoke-test.mp4
+
+      - name: Upload the sample as a short-lived artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-smoke-test
+          path: output/renderer-smoke-test.mp4
+          if-no-files-found: error
+          retention-days: 1
