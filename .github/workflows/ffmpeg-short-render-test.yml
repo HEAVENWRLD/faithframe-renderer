@@ -90,6 +90,25 @@ jobs:
           }
           JSON
 
+      - name: Check Python renderer syntax and production caption timing
+        run: |
+          set -euo pipefail
+          python3 -m py_compile renderer/render_short.py renderer/worker.py
+          python3 - <<'PY'
+          from renderer.render_short import normalize_captions
+          source = [{
+              "start": 0,
+              "end": 30,
+              "text": "God is with you through every season. Keep trusting even when the road feels uncertain. His grace gives you strength for today. Walk forward in faith and hope."
+          }]
+          result = normalize_captions(source, 12.0)
+          assert len(result) >= 4, result
+          assert abs(result[0]["start"]) < 0.001
+          assert abs(result[-1]["end"] - 12.0) < 0.001
+          assert all(item["end"] > item["start"] for item in result)
+          print("Single-block production captions split into", len(result), "timed phrases.")
+          PY
+
       - name: Render the vertical Short
         run: python3 renderer/render_short.py --manifest testdata/manifest.json
 
