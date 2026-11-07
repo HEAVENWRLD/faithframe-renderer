@@ -169,6 +169,31 @@ def normalize_captions(events: list[dict[str, Any]], duration: float) -> list[di
     return [item for item in output if item["end"] > item["start"] and item["text"]]
 
 
+def format_srt_timestamp(value: float) -> str:
+    milliseconds = max(0, int(round(float(value) * 1000)))
+    hours, milliseconds = divmod(milliseconds, 3_600_000)
+    minutes, milliseconds = divmod(milliseconds, 60_000)
+    seconds, milliseconds = divmod(milliseconds, 1_000)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
+
+
+def write_normalized_srt(events: list[dict[str, Any]], destination: Path) -> None:
+    blocks: list[str] = []
+    for event in events:
+        text = re.sub(r"\\s+", " ", str(event.get("text", "")).strip())
+        start, end = float(event["start"]), float(event["end"])
+        if not text or end <= start:
+            continue
+        blocks.append(
+            f"{len(blocks) + 1}\\n"
+            f"{format_srt_timestamp(start)} --> {format_srt_timestamp(end)}\\n"
+            f"{text}"
+        )
+    if not blocks:
+        raise ValueError("No usable caption phrases remain after timing normalization.")
+    destination.write_text("\\n\\n".join(blocks) + "\\n", encoding="utf-8")
+
+
 def filter_path(path: Path) -> str:
     return str(path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
@@ -199,6 +224,8 @@ def main() -> int:
     title = str(manifest.get("title") or "A Message of Faith").replace("\n", " ").replace("\r", " ")[:120]
     narration_duration = probe_duration(narration)
     captions = normalize_captions(parse_srt(srt), narration_duration)
+    normalized_srt = srt.parent / "captions-normalized.srt"
+    write_normalized_srt(captions, normalized_srt)
     starts = scene_starts(len(scenes), captions, narration_duration)
     total_duration = narration_duration + OUTRO_SECONDS
 
@@ -283,7 +310,7 @@ def main() -> int:
         "OutlineColour=&H80000000,BackColour=&H90040712,BorderStyle=3,"
         "Outline=1,Shadow=0,Alignment=2,MarginV=142"
     )
-    graph.append(f"[story]subtitles=filename='{filter_path(srt)}':force_style='{style}'[captioned]")
+    graph.append(f"[story]subtitles=filename='{filter_path(normalized_srt)}':force_style='{style}'[captioned]")
     graph.append("[captioned]drawbox=x=0:y=0:w=720:h=172:color=black@0.48:t=fill:enable='lt(t,3.3)'[headerbg]")
     font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     graph.append(
