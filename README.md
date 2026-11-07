@@ -4,14 +4,13 @@ FFmpeg rendering worker for the Gospel Inspiration video automation project.
 
 ## Current status
 
-The repository has two manual GitHub Actions tests:
+The repository has one manual GitHub Actions test:
 
-- **FFmpeg Smoke Test** — verifies that FFmpeg installs and runs.
 - **FFmpeg Short Render Test** — builds synthetic source media and renders a sample 9:16 MP4 using the renderer in `renderer/render_short.py`.
 
 The Short Render Test exercises scene images, slow zoom/pan, timed SRT captions, narration, background music, an outro card, Gospel Inspiration title branding, H.264 video, and AAC audio.
 
-Both tests use synthetic media only. They do not access Hatchable storage, Activepieces, YouTube, private media, or production credentials. The renderer is not connected to production yet.
+The test uses synthetic media only. It does not access Hatchable storage, Activepieces, YouTube, private media, or production credentials. The renderer is not connected to production yet.
 
 ## Run the vertical Short test
 
