@@ -32,6 +32,9 @@ jobs:
           ffmpeg -version
           ffprobe -version
 
+      - name: Validate renderer Python files
+        run: python3 -m py_compile renderer/render_short.py renderer/worker.py
+
       - name: Render the private task and return the MP4 to Hatchable
         env:
           RENDER_TASK_ID: ${{ inputs.task_id }}
@@ -46,7 +49,7 @@ jobs:
         if: failure()
         env:
           RENDER_TASK_ID: ${{ inputs.task_id }}
-          HATCHABLE_API_BASE_URL: https://daily-ai-youtube.hatchable.site/api
+          HATCHABLE_API_BASE_URL: https://faithframe-render.hatchable.site/api
           FFMPEG_WORKER_TOKEN: ${{ secrets.FFMPEG_WORKER_TOKEN }}
         run: |
           set -euo pipefail
