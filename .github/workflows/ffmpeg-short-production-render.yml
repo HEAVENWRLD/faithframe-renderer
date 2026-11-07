@@ -41,3 +41,20 @@ jobs:
           set -euo pipefail
           test -n "$FFMPEG_WORKER_TOKEN"
           python3 renderer/worker.py --task-id "$RENDER_TASK_ID"
+
+      - name: Report the failed render to Hatchable
+        if: failure()
+        env:
+          RENDER_TASK_ID: ${{ inputs.task_id }}
+          HATCHABLE_API_BASE_URL: https://daily-ai-youtube.hatchable.site/api
+          FFMPEG_WORKER_TOKEN: ${{ secrets.FFMPEG_WORKER_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${FFMPEG_WORKER_TOKEN:-}" ]; then
+            curl --silent --show-error --max-time 30 \
+              -X POST "${HATCHABLE_API_BASE_URL}/renderer/failure" \
+              -H "Authorization: Bearer ${FFMPEG_WORKER_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data-binary "{\"taskId\":\"$RENDER_TASK_ID\",\"message\":\"GitHub Actions FFmpeg render failed; inspect this run's logs.\"}" \
+              -o /dev/null || true
+          fi
