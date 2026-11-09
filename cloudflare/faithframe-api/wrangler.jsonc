@@ -13,6 +13,7 @@
   "vars": {
     "GITHUB_REPOSITORY": "HEAVENWRLD/faithframe-renderer",
     "GITHUB_SHORT_WORKFLOW": "ffmpeg-short-production-render.yml",
+    "GITHUB_LONG_WORKFLOW": "ffmpeg-long-production-render.yml",
     "GITHUB_REF": "main"
   },
   "secrets": {
