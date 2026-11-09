@@ -224,6 +224,39 @@ def upload_result(api_base: str, token: str, task_id: str, video_path: Path) -> 
     return result
 
 
+def upload_thumbnail(api_base: str, token: str, task_id: str, image_path: Path) -> dict[str, Any]:
+    size = image_path.stat().st_size
+    if size < 1000 or size > 12 * 1024 * 1024:
+        raise RuntimeError("Short thumbnail size is outside the allowed range.")
+    data = image_path.read_bytes()
+    if len(data) < 8 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise RuntimeError("Short thumbnail is not a valid PNG image.")
+    request = urllib.request.Request(
+        api_base + "/v1/tasks/" + task_id + "/thumbnail",
+        data=data,
+        headers={
+            "Authorization": "Bearer " + token,
+            "Content-Type": "image/png",
+            "Accept": "application/json",
+        },
+        method="PUT",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=180) as response:
+            raw = response.read(256 * 1024)
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError("Cloudflare rejected the Short thumbnail (HTTP " + str(exc.code) + ").") from None
+    except Exception:
+        raise RuntimeError("Could not return the Short thumbnail to private R2 storage.") from None
+    try:
+        result = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise RuntimeError("Cloudflare returned an unreadable thumbnail response.")
+    if not isinstance(result, dict) or result.get("ok") is not True:
+        raise RuntimeError("Cloudflare did not confirm that the Short thumbnail was saved.")
+    return result
+
+
 def report_failure(api_base: str, token: str, task_id: str, message: str) -> None:
     payload = json.dumps({"message": str(message)[:600]}).encode("utf-8")
     request = urllib.request.Request(
@@ -298,6 +331,12 @@ def main() -> int:
             music_path = assets_dir / "ambient-music.wav"
             make_ambient_music_wav(music_path, str(task.get("title") or task_id))
 
+        thumbnail_asset = task.get("thumbnailAsset") or {}
+        thumbnail_path = None
+        if isinstance(thumbnail_asset, dict) and thumbnail_asset.get("assetKey"):
+            thumbnail_path = assets_dir / "thumbnail.png"
+            total_downloaded += download_asset(api_base, token, str(thumbnail_asset["assetKey"]), thumbnail_path, 12 * 1024 * 1024)
+
         outro = task.get("outro") or {}
         outro_path = None
         if isinstance(outro, dict) and outro.get("assetKey"):
@@ -312,6 +351,9 @@ def main() -> int:
         if not caption_srt:
             caption_srt = build_fallback_srt(str(task.get("captionText") or ""))
         caption_path.write_text(caption_srt, encoding="utf-8")
+
+        if thumbnail_path:
+            upload_thumbnail(api_base, token, task_id, thumbnail_path)
 
         output_path = output_dir / "rendered-short.mp4"
         manifest_path = root / "manifest.json"
