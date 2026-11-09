@@ -221,7 +221,7 @@ function decodeBase64(value) {
 
 async function generateImage(request, env) {
   const input = await readJson(request, 100_000);
-  if (!env.CLOUDFLARE_ACCOUNT_ID || !env.CLOUDFLARE_API_TOKEN) {
+  if (!env.CLOUDFLARE_ACCOUNT_ID || !env.WORKERS_AI_API_TOKEN) {
     return json({ ok: false, error: "CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN must be configured." }, 503);
   }
   const prompt = String(input.prompt || "").trim();
@@ -236,7 +236,7 @@ async function generateImage(request, env) {
     "https://api.cloudflare.com/client/v4/accounts/" + encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID) + "/ai/run/" + IMAGE_MODEL,
     {
       method: "POST",
-      headers: { authorization: "Bearer " + env.CLOUDFLARE_API_TOKEN },
+      headers: { authorization: "Bearer " + env.WORKERS_AI_API_TOKEN },
       body: form,
       signal: AbortSignal.timeout(120_000)
     }
