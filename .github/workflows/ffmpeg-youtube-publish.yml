@@ -1,0 +1,45 @@
+name: Resumable YouTube Publishing
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: Opaque Cloudflare render task UUID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gospel-youtube-\${{ inputs.task_id }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish one completed Gospel Inspiration video
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the publisher
+        uses: actions/checkout@v4
+
+      - name: Validate publisher Python syntax
+        run: python3 -m py_compile renderer/youtube_publisher.py
+
+      - name: Upload with the saved YouTube resumable session
+        env:
+          RENDER_API_BASE_URL: \${{ vars.RENDER_API_BASE_URL }}
+          FFMPEG_WORKER_TOKEN: \${{ secrets.FFMPEG_WORKER_TOKEN }}
+          YOUTUBE_CLIENT_ID: \${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: \${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: \${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$RENDER_API_BASE_URL"
+          test -n "$FFMPEG_WORKER_TOKEN"
+          test -n "$YOUTUBE_CLIENT_ID"
+          test -n "$YOUTUBE_CLIENT_SECRET"
+          test -n "$YOUTUBE_REFRESH_TOKEN"
+          python3 renderer/youtube_publisher.py --task-id "\${{ inputs.task_id }}"
