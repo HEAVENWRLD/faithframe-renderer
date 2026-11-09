@@ -1,0 +1,42 @@
+name: Validate Gospel Inspiration Renderers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cloudflare/faithframe-api/**"
+      - "renderer/**"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "cloudflare/faithframe-api/**"
+      - "renderer/**"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    name: Validate Worker and Python source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check Cloudflare Worker JavaScript syntax
+        run: |
+          node --check cloudflare/faithframe-api/src/index.js
+          node --check cloudflare/faithframe-api/src/long.js
+
+      - name: Check Python renderer syntax
+        run: |
+          python3 -m py_compile \
+            renderer/worker.py \
+            renderer/render_short.py \
+            renderer/long_worker.py \
+            renderer/render_long.py
+
+      - name: Check whitespace errors
+        run: git diff --check
