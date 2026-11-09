@@ -1,0 +1,46 @@
+name: FFmpeg Long Production Render
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: Opaque Cloudflare long-video task UUID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gospel-long-\${{ inputs.task_id }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    name: Generate and render one 12-section long video
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Check out the renderer
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg, fonts and SVG support
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg fonts-dejavu-core librsvg2-bin
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Validate long renderer Python files
+        run: python3 -m py_compile renderer/render_long.py renderer/long_worker.py
+
+      - name: Generate media, render and return the long MP4 through Cloudflare
+        env:
+          RENDER_API_BASE_URL: \${{ vars.RENDER_API_BASE_URL }}
+          FFMPEG_WORKER_TOKEN: \${{ secrets.FFMPEG_WORKER_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$RENDER_API_BASE_URL"
+          test -n "$FFMPEG_WORKER_TOKEN"
+          python3 renderer/long_worker.py --task-id "\${{ inputs.task_id }}"
