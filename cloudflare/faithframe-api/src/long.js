@@ -28,6 +28,17 @@ async function readJson(bucket,key) {
 async function writeJson(bucket,key,value) {
   await bucket.put(key,JSON.stringify(value),{httpMetadata:{contentType:"application/json; charset=utf-8",cacheControl:"no-store"}});
 }
+function scheduledEATIso(hour) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Nairobi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const values = {};
+  for (const part of parts) if (part.type !== "literal") values[part.type] = Number(part.value);
+  return new Date(Date.UTC(values.year, values.month - 1, values.day, Number(hour) - 3, 0, 0)).toISOString();
+}
 function words(value) {
   return String(value || "").trim().split(/\s+/).filter(Boolean).length;
 }
@@ -204,6 +215,7 @@ export async function produceLong(request,env) {
   const now = new Date().toISOString();
   const task = {
     taskId:taskId,status:"queued_media",format:"long",formatType:format.type,
+    targetPublishAt:scheduledEATIso(22),youtubeStatus:"pending",
     title:String(story.title).slice(0,100),topic:String(story.topic).slice(0,300),
     description:story.description,tags:story.tags,bibleReferences:story.bibleReferences,
     thumbnailPrompt:story.thumbnailPrompt,sections:story.sections,wordCount:story.wordCount,
