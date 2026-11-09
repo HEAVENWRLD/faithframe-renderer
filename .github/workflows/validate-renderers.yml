@@ -29,6 +29,7 @@ jobs:
         run: |
           node --check cloudflare/faithframe-api/src/index.js
           node --check cloudflare/faithframe-api/src/long.js
+          node --check cloudflare/faithframe-api/src/cleanup.js
 
       - name: Check Python renderer syntax
         run: |
