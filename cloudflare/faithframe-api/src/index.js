@@ -223,15 +223,16 @@ async function generateImage(request, env) {
   if (prompt.length < 20 || prompt.length > 5000) return json({ error: "Image prompt must contain 20–5000 characters." }, 400);
   const width = Math.max(256, Math.min(1280, Number(input.width || 576)));
   const height = Math.max(256, Math.min(1280, Number(input.height || 1024)));
+  const form = new FormData();
+  form.append("prompt", prompt);
+  form.append("width", String(width));
+  form.append("height", String(height));
   const response = await fetch(
     "https://api.cloudflare.com/client/v4/accounts/" + encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID) + "/ai/run/" + IMAGE_MODEL,
     {
       method: "POST",
-      headers: {
-        authorization: "Bearer " + env.CLOUDFLARE_API_TOKEN,
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({ prompt, width, height }),
+      headers: { authorization: "Bearer " + env.CLOUDFLARE_API_TOKEN },
+      body: form,
       signal: AbortSignal.timeout(120_000)
     }
   );
