@@ -36,7 +36,8 @@ jobs:
             renderer/worker.py \
             renderer/render_short.py \
             renderer/long_worker.py \
-            renderer/render_long.py
+            renderer/render_long.py \
+            renderer/youtube_publisher.py
 
       - name: Check whitespace errors
         run: git diff --check
