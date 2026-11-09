@@ -42,6 +42,10 @@ def open_http(request: urllib.request.Request, timeout: int = 120):
         raise
 
 
+def status_code(response) -> int:
+    return int(getattr(response, "status", getattr(response, "code", 0)))
+
+
 def api_headers(token: str) -> dict[str, str]:
     return {
         "Authorization": "Bearer " + token,
@@ -294,11 +298,11 @@ def inspect_session(session_url: str, access_token: str, total_bytes: int) -> tu
         detail = exc.read(1000).decode("utf-8", errors="replace")
         raise RuntimeError("YouTube upload status check failed (HTTP " + str(exc.code) + "): " + detail[:250]) from None
     with response:
-        if response.status in (200, 201):
+        if status_code(response) in (200, 201):
             return None, parse_completed_video(response)
-        if response.status == 308:
+        if status_code(response) == 308:
             return next_confirmed_byte(response, total_bytes), None
-        raise RuntimeError("Unexpected YouTube upload status response: HTTP " + str(response.status))
+        raise RuntimeError("Unexpected YouTube upload status response: HTTP " + str(status_code(response)))
 
 
 def resumable_upload(video_path: Path, session_url: str, access_token: str, total_bytes: int) -> dict[str, Any]:
@@ -342,11 +346,11 @@ def resumable_upload(video_path: Path, session_url: str, access_token: str, tota
             try:
                 response = open_http(request, timeout=240)
                 with response:
-                    if response.status in (200, 201):
+                    if status_code(response) in (200, 201):
                         if end != total_bytes:
                             raise RuntimeError("YouTube finalized the upload before all bytes were sent.")
                         return parse_completed_video(response)
-                    if response.status == 308:
+                    if status_code(response) == 308:
                         confirmed = next_confirmed_byte(response, total_bytes)
                         if confirmed < offset or confirmed > end:
                             raise RuntimeError("YouTube acknowledged an unexpected upload position.")
@@ -359,7 +363,7 @@ def resumable_upload(video_path: Path, session_url: str, access_token: str, tota
                             raise RuntimeError("YouTube repeatedly acknowledged no additional video bytes.")
                         time.sleep(retry_delay(retries, response))
                         continue
-                    raise RuntimeError("Unexpected YouTube response while uploading: HTTP " + str(response.status))
+                    raise RuntimeError("Unexpected YouTube response while uploading: HTTP " + str(status_code(response)))
             except urllib.error.HTTPError as exc:
                 if exc.code in (404, 410):
                     raise RuntimeError(
@@ -531,7 +535,7 @@ if __name__ == "__main__":
     try:
         raise SystemExit(run(arguments.task_id))
     except Exception as error:
-        message = str(error).replace(API_BASE, "[Cloudflare API]").slice(0, 700) if False else str(error)[:700]
+        message = str(error).replace(API_BASE, "[Cloudflare API]")[:700]
         print("YOUTUBE PUBLISHER FAILED:", message, file=sys.stderr)
         if API_BASE.startswith("https://") and len(WORKER_TOKEN) >= 32 and re.fullmatch(r"[0-9a-fA-F-]{36}", arguments.task_id):
             report_failure(API_BASE, WORKER_TOKEN, arguments.task_id, message)
