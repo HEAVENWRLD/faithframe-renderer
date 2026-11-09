@@ -18,6 +18,7 @@
   },
   "secrets": {
     "required": [
+      "ACTIVEPIECES_API_TOKEN",
       "FFMPEG_WORKER_TOKEN",
       "POLLINATIONS_API_KEY",
       "HF_TOKEN",
