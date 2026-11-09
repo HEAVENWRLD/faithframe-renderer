@@ -1,48 +1,78 @@
-# FaithFrame Renderer
+# Gospel Inspiration Media Renderer
 
-External FFmpeg rendering worker for Gospel Inspiration. The FaithFrame Studio dashboard, database, permanent media storage and YouTube publishing remain in the original private Hatchable project.
+Cloudflare Worker + Cloudflare R2 + GitHub Actions + FFmpeg renderer for the Gospel Inspiration channel.
 
-## Production rendering
+This repository contains the media API, the FFmpeg workers and the render workflows. ActivePieces is responsible for daily scheduling, starting production, tracking the publishing queue and coordinating publication. Cloudflare Workers call the original generation services and keep private media in R2. GitHub Actions renders final videos with FFmpeg.
 
-**FFmpeg Short Production Render** accepts only an opaque Short draft ID. It retrieves private task metadata from a separate API-only bridge, downloads the original media from short-lived signed storage links, renders the MP4 on GitHub Actions, then returns the MP4 to the bridge for collection into the original FaithFrame Studio storage.
+There is no Hatchable runtime, storage bucket, database or bridge in this architecture.
 
-The temporary synthetic sample workflow has been removed after it verified the renderer's MP4 encoding and sample caption timing. That test used generated media only; the production worker-to-bridge return path still requires the private bridge and shared secrets to be configured. Production rendering never uploads private media as a GitHub Actions artifact.
+## Production architecture
 
-The bridge has no dashboard or public media library. Its API endpoints are protected by a high-entropy bearer token. The main FaithFrame Studio dashboard remains private.
+1. ActivePieces starts the Shorts or long-video production workflow on its Africa/Nairobi schedule.
+2. The Cloudflare Worker authenticates the request and calls the original services:
+   - Pollinations text generation (\`openai/gpt-5.4-nano\`) for scripts.
+   - Authenticated Hugging Face public ZeroGPU Space as the text-generation fallback.
+   - Cloudflare Workers AI FLUX.2 Klein 4B for scene images and thumbnails.
+   - Fish Audio \`s2.1-pro-free\` for narration.
+3. Generated assets and render-task metadata are stored privately in Cloudflare R2.
+4. The Worker dispatches the appropriate GitHub Actions workflow with an opaque task UUID only.
+5. The GitHub worker downloads the private assets through the authenticated Worker API, generates the original ambient music locally, renders with FFmpeg and returns the MP4 to R2.
+6. ActivePieces collects the render result, stores metadata in its Publishing Queue and coordinates YouTube publication. A separate resumable uploader is required for reliable large-video uploads; the YouTube connector's metadata API is not a substitute for binary media upload.
 
-## Production connection
+Ambient music is generated locally by the renderer from original oscillator-based notes. Captions are derived from the script and timed across the real narration duration; there is no speech-to-text dependency.
 
-Do not enable production dispatch until the API-only bridge has been switched to public visibility in Hatchable Settings and the same random token has been saved in the bridge, the private studio and GitHub Actions Secrets.
+## Cloudflare Worker setup
 
-- In the private **Daily AI YouTube Shorts Studio** project, set:
-  - `GITHUB_ACTIONS_TOKEN`: fine-grained GitHub token restricted to `HEAVENWRLD/faithframe-renderer` with **Actions: Read and write** permission.
-  - `FFMPEG_WORKER_TOKEN`: high-entropy shared bearer token.
-  - `FFMPEG_RELAY_URL`: `https://faithframe-render.hatchable.site/api`.
-  - `FFMPEG_EXTERNAL_RENDER_ENABLED`: set to `true` only after the other configuration is complete.
-- In the private **FaithFrame Render Bridge** project, set the same `FFMPEG_WORKER_TOKEN`.
-- In GitHub repository **Settings → Secrets and variables → Actions**, set the same `FFMPEG_WORKER_TOKEN`.
+Worker source and configuration:
 
-Never put signed media URLs or bearer tokens in workflow inputs, logs, or artifacts. The workflow input contains only the opaque draft ID.
+- \`cloudflare/faithframe-api/src/index.js\`
+- \`cloudflare/faithframe-api/wrangler.jsonc\`
 
-The bridge stores the returned MP4 temporarily. The original private studio downloads it, saves it in its existing storage, and then acknowledges deletion of the temporary bridge copy. The existing YouTube upload job remains responsible for publishing and duplicate-upload protection.
+Create the R2 bucket named \`gospel-inspiration-media\`, then deploy the Worker from \`cloudflare/faithframe-api\`.
 
-## Renderer manifest
+The Worker requires these encrypted secrets:
 
-`renderer/render_short.py` accepts a local JSON manifest with:
+- \`FFMPEG_WORKER_TOKEN\` — a long random shared token used by ActivePieces, the Worker and GitHub Actions.
+- \`POLLINATIONS_API_KEY\` — Pollinations text API key.
+- \`HF_TOKEN\` — Hugging Face token with Read access to public Spaces; this is for the public ZeroGPU Space, not paid Inference Providers.
+- \`CLOUDFLARE_ACCOUNT_ID\` — Cloudflare account ID for Workers AI.
+- \`CLOUDFLARE_API_TOKEN\` — Cloudflare API token with Workers AI permissions.
+- \`FISH_API_KEY\` — Fish Audio developer API key.
+- \`GITHUB_TOKEN\` — fine-grained GitHub token with Actions: Read and write on this repository.
 
-- `title`: video title shown at the beginning.
-- `scenes`: 4–30 local image paths, in display order.
-- `narration`: local narration audio path.
-- `music`: local background music path.
-- `captions_srt`: local timed SRT caption path.
-- `outro`: optional local outro image or SVG path.
-- `output`: output MP4 path (optional).
+Never place any secret in Git, Wrangler \`vars\`, workflow inputs, task IDs, logs or a public asset URL.
 
-Hatchable currently stores the full script as a single caption block. The renderer now splits that block into readable phrases, writes a correctly timed temporary SRT file using the actual narration duration, and burns those phrase-level captions into the video.
+## GitHub Actions setup
 
-## Security
+In \`HEAVENWRLD/faithframe-renderer\` → Settings → Secrets and variables → Actions:
 
-- Never commit videos, narration, music, generated images, signed storage URLs, API keys, access tokens, or environment files.
-- Keep credentials in Hatchable project secrets or GitHub Actions Secrets.
-- Workflows must not execute untrusted pull-request code with secrets.
-- The main studio and its permanent storage remain private.
+- Add secret \`FFMPEG_WORKER_TOKEN\`, using the same value as the Cloudflare Worker secret.
+- Add variable \`RENDER_API_BASE_URL\`, set to the deployed Cloudflare Worker HTTPS URL.
+
+The Worker uses a repository-scoped token to dispatch the workflows. The workflow receives only a task UUID, then fetches the actual task and media through the authenticated Worker API.
+
+## ActivePieces setup
+
+ActivePieces will need the deployed Worker URL and the same \`FFMPEG_WORKER_TOKEN\` configured as a Bearer credential on the API request step. Keep all production flows disabled until the provider secrets, render-worker secrets and YouTube uploader are configured and the test render has completed successfully.
+
+## Current Short renderer manifest
+
+The Short renderer accepts a local JSON manifest containing:
+
+- \`title\`
+- \`scenes\` (4–30 local image paths)
+- \`narration\`
+- \`music\`
+- \`captions_srt\`
+- \`outro\` (optional)
+- \`output\` (optional)
+
+The worker writes this manifest from the private task retrieved from R2. The renderer outputs H.264/AAC MP4 at 720×1280, 24 fps, with phrase-level captions, moving stills, title/brand overlay and a three-second subscribe ending.
+
+## Security and privacy
+
+- Generated images, narration, music, scripts, render-task JSON and MP4s remain in private R2 objects.
+- The R2 bucket is not public and the Worker API requires a bearer token.
+- GitHub Actions inputs contain only opaque UUIDs; they do not contain media URLs or credentials.
+- Do not commit videos, generated images, audio, signed storage URLs, API keys, access tokens or environment files.
+- The renderer validates media size, task identity, scene sequence and final MP4 format before accepting the result.
