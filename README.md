@@ -30,41 +30,33 @@ Worker source and configuration:
 
 Create the R2 bucket named \`gospel-inspiration-media\`, then deploy the Worker from \`cloudflare/faithframe-api\`.
 
-The Worker requires these encrypted secrets:
+Create these encrypted GitHub repository secrets in `HEAVENWRLD/faithframe-renderer` → Settings → Secrets and variables → Actions. The Cloudflare deployment workflow synchronizes the runtime secrets to the Worker:
 
-- \`FFMPEG_WORKER_TOKEN\` — a long random shared token used by ActivePieces, the Worker and GitHub Actions.
-- \`POLLINATIONS_API_KEY\` — Pollinations text API key.
-- \`HF_TOKEN\` — Hugging Face token with Read access to public Spaces; this is for the public ZeroGPU Space, not paid Inference Providers.
-- \`CLOUDFLARE_ACCOUNT_ID\` — Cloudflare account ID for Workers AI.
-- \`CLOUDFLARE_API_TOKEN\` — Cloudflare API token with Workers AI permissions.
-- \`FISH_API_KEY\` — Fish Audio developer API key.
-- \`GITHUB_TOKEN\` — fine-grained GitHub token with Actions: Read and write on this repository.
+- `CLOUDFLARE_API_TOKEN` — Cloudflare account API token with **Edit Cloudflare Workers**, scoped to the account containing this Worker; used only by the deployment action.
+- `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account ID.
+- `ACTIVEPIECES_API_TOKEN` — a unique high-entropy token used by ActivePieces for production, publishing-dispatch and cleanup requests.
+- `FFMPEG_WORKER_TOKEN` — a separate high-entropy token used by GitHub render workers to access private task and media endpoints.
+- `POLLINATIONS_API_KEY` — Pollinations text API key.
+- `HF_TOKEN` — Hugging Face token with Read access to public Spaces; this is for the public ZeroGPU Space, not paid Inference Providers.
+- `WORKERS_AI_API_TOKEN` — a separate Cloudflare API token with Account > Workers AI > Read and Edit permissions for FLUX.2 Klein image generation.
+- `FISH_API_KEY` — Fish Audio developer API key.
+- `RENDER_GITHUB_TOKEN` — fine-grained GitHub token with Actions: Read and write on this repository. The Worker receives this as its private `GITHUB_TOKEN` secret.
+- `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and `YOUTUBE_REFRESH_TOKEN` — OAuth credentials for the Gospel Inspiration channel.
 
-Never place any secret in Git, Wrangler \`vars\`, workflow inputs, task IDs, logs or a public asset URL.
+Do not reuse `ACTIVEPIECES_API_TOKEN` as `FFMPEG_WORKER_TOKEN`. Never place a secret in Git, Wrangler `vars`, workflow inputs, task IDs, logs or a public asset URL.
 
 ## GitHub Actions setup
 
-In \`HEAVENWRLD/faithframe-renderer\` → Settings → Secrets and variables → Actions:
+In `HEAVENWRLD/faithframe-renderer` → Settings → Secrets and variables → Actions, add this repository variable:
 
-- Add secret \`FFMPEG_WORKER_TOKEN\`, using the same value as the Cloudflare Worker secret.
-- Add variable \`RENDER_API_BASE_URL\`, set to the deployed Cloudflare Worker HTTPS URL.
+- `RENDER_API_BASE_URL` — the deployed Cloudflare Worker HTTPS URL (its `workers.dev` address).
 
-The Worker uses a repository-scoped token to dispatch the workflows. The workflow receives only a task UUID, then fetches the actual task and media through the authenticated Worker API.
+The Worker receives only opaque task UUIDs for workflow dispatch. GitHub render workers retrieve source assets and tasks through the authenticated Worker API using `FFMPEG_WORKER_TOKEN`.
 
-For YouTube publication, add these additional GitHub Actions secrets:
-
-- `YOUTUBE_CLIENT_ID`
-- `YOUTUBE_CLIENT_SECRET`
-- `YOUTUBE_REFRESH_TOKEN`
-
-The refresh token must belong to the intended Gospel Inspiration channel and have been granted the `https://www.googleapis.com/auth/youtube.upload` scope. Do not paste any of these values into chat, Git, ActivePieces step text, or Cloudflare Worker variables. The publishing workflow refreshes an access token at run time and publishes as Public only after the render is complete and its scheduled Nairobi time has passed.
-
-The uploader stores the YouTube resumable session URL privately in R2 before sending video bytes. On restart it checks the server-confirmed byte range and resumes from there. It does not silently start a new session when a saved session has expired; it marks the task for review to reduce the risk of duplicate videos. Videos are submitted with the synthetic-media disclosure field set to true. Long-form thumbnails are attempted only after YouTube reports successful video processing.
-
+The deployment workflow is `.github/workflows/deploy-cloudflare-worker.yml`. It is manual until the credentials are configured. After adding the listed repository secrets, open **Actions** → **Deploy Gospel Inspiration Cloudflare Worker** → **Run workflow**. It checks the required secrets first, then deploys the Worker and synchronizes its encrypted runtime secrets.
 ## ActivePieces setup
 
-ActivePieces will need the deployed Worker URL and the same \`FFMPEG_WORKER_TOKEN\` configured as a Bearer credential on the API request step. Keep all production flows disabled until the provider secrets, render-worker secrets and YouTube uploader are configured and the test render has completed successfully.
-
+ActivePieces will need the deployed Worker URL and `ACTIVEPIECES_API_TOKEN` configured as the Bearer credential on all production, publishing-dispatch and maintenance API request steps. This token is deliberately different from `FFMPEG_WORKER_TOKEN`. Keep all flows disabled until the Worker is deployed, the tokens are configured, and test renders and a YouTube test upload succeed.
 ## R2 storage cleanup and retention
 
 The ActivePieces maintenance flow calls `POST /v1/maintenance/cleanup` once per day (03:00 Africa/Nairobi) using `ACTIVEPIECES_API_TOKEN`. The Worker scans private R2 task records and removes media under these rules:
