@@ -51,6 +51,16 @@ In \`HEAVENWRLD/faithframe-renderer\` → Settings → Secrets and variables →
 
 The Worker uses a repository-scoped token to dispatch the workflows. The workflow receives only a task UUID, then fetches the actual task and media through the authenticated Worker API.
 
+For YouTube publication, add these additional GitHub Actions secrets:
+
+- `YOUTUBE_CLIENT_ID`
+- `YOUTUBE_CLIENT_SECRET`
+- `YOUTUBE_REFRESH_TOKEN`
+
+The refresh token must belong to the intended Gospel Inspiration channel and have been granted the `https://www.googleapis.com/auth/youtube.upload` scope. Do not paste any of these values into chat, Git, ActivePieces step text, or Cloudflare Worker variables. The publishing workflow refreshes an access token at run time and publishes as Public only after the render is complete and its scheduled Nairobi time has passed.
+
+The uploader stores the YouTube resumable session URL privately in R2 before sending video bytes. On restart it checks the server-confirmed byte range and resumes from there. It does not silently start a new session when a saved session has expired; it marks the task for review to reduce the risk of duplicate videos. Videos are submitted with the synthetic-media disclosure field set to true. Long-form thumbnails are attempted only after YouTube reports successful video processing.
+
 ## ActivePieces setup
 
 ActivePieces will need the deployed Worker URL and the same \`FFMPEG_WORKER_TOKEN\` configured as a Bearer credential on the API request step. Keep all production flows disabled until the provider secrets, render-worker secrets and YouTube uploader are configured and the test render has completed successfully.
