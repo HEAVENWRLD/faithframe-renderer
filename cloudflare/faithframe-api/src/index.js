@@ -346,6 +346,9 @@ async function createRenderTask(request, env) {
     youtubeStatus: "pending",
     title: String(input.title || "A Message of Faith").slice(0, 180),
     description: String(input.description || "").slice(0, 5000),
+    tags: Array.isArray(input.tags) ? input.tags.map(value => String(value).trim()).filter(Boolean).slice(0, 15) : [],
+    thumbnailAsset: input.thumbnailAsset && input.thumbnailAsset.assetKey
+      ? { assetKey: safeKey(input.thumbnailAsset.assetKey), contentType: "image/png" } : null,
     sceneAssets,
     narration,
     music: input.music && input.music.assetKey ? { assetKey: safeKey(input.music.assetKey), contentType: "audio/wav" } : null,
@@ -438,9 +441,14 @@ function extractShortFields(script) {
   const ordered = scenes.sort((a, b) => a.sceneNumber - b.sceneNumber).slice(0, 6);
   if (ordered.length < 4) throw new Error("Generated Short must contain at least four numbered visual scenes.");
   const description = extractSection(script, "DESCRIPTION", ["HASHTAGS"]).slice(0, 4000);
+  const hashtagText = extractSection(script, "HASHTAGS", []);
+  const tags = Array.from(hashtagText.matchAll(/#?([A-Za-z0-9][A-Za-z0-9_-]{1,39})/g))
+    .map(match => match[1])
+    .filter((value, index, values) => values.findIndex(item => item.toLowerCase() === value.toLowerCase()) === index)
+    .slice(0, 15);
   const bibleReference = extractSection(script, "BIBLE REFERENCE", ["HOOK", "VOICEOVER", "VISUAL PLAN"]).split(/\r?\n/)[0].slice(0, 160);
   const category = extractSection(script, "CATEGORY", ["BIBLE REFERENCE", "HOOK", "VOICEOVER"]).split(/\r?\n/)[0].slice(0, 100);
-  return { title, voiceover, scenes: ordered, description, bibleReference, category };
+  return { title, voiceover, scenes: ordered, description, tags, bibleReference, category };
 }
 
 async function internalJsonCall(handler, env, payload) {
@@ -499,10 +507,26 @@ async function produceShort(request, env) {
     text: fields.voiceover,
     voiceStyle
   });
+  const thumbnail = await internalJsonCall(generateImage, env, {
+    jobId,
+    fileName: "short-thumbnail",
+    prompt: [
+      "Premium 16:9 landscape YouTube thumbnail, 1280x720, for a Christian Gospel Inspiration Short.",
+      "Cinematic, emotionally clear, polished dramatic lighting, powerful single focal subject, readable composition at small size.",
+      "No text, letters, typography, logos, watermark or border.",
+      "Do not depict an event as biblical fact unless supported by Scripture.",
+      "Title/theme: " + fields.title + ".",
+      "Visual direction: " + fields.scenes[0].prompt + "."
+    ].join(" "),
+    width: 1280,
+    height: 720
+  });
   const taskResult = await internalJsonCall(createRenderTask, env, {
     taskId: jobId,
     title: fields.title,
     description: fields.description,
+    tags: fields.tags,
+    thumbnailAsset: { assetKey: thumbnail.assetKey, contentType: "image/png" },
     sceneAssets,
     narration: { assetKey: narration.assetKey, contentType: "audio/mpeg" },
     captionText: fields.voiceover,
@@ -532,6 +556,8 @@ async function produceShort(request, env) {
     status: taskResult.status,
     title: fields.title,
     description: fields.description,
+    tags: fields.tags,
+    thumbnailAssetKey: thumbnail.assetKey,
     script: scriptResult.script,
     provider: scriptResult.provider,
     fallbackUsed: scriptResult.fallbackUsed,
