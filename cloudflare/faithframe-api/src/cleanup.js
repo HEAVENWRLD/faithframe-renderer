@@ -74,6 +74,9 @@ async function deleteExact(bucket, key) {
 }
 
 function ageEligibleTask(task, now) {
+  if (task.storageCleanup && task.storageCleanup.mediaDeletedAt) {
+    return { eligible: false, reason: "media_already_cleaned" };
+  }
   const taskId = String(task.taskId || "");
   const hasYoutubeVideo = Boolean(task.youtubeVideoId) || task.youtubeStatus === "published";
   const hasActiveUploadSession = Boolean(task.youtubeUploadSessionUrl) && !hasYoutubeVideo;
@@ -209,6 +212,37 @@ export async function cleanupMedia(env, options = {}) {
       continue;
     }
     if (!task || typeof task !== "object" || String(task.taskId || "") !== taskId) continue;
+
+    const statusNow = String(task.youtubeStatus || "");
+    const updatedMs = isoMs(task.updatedAt) || isoMs(task.createdAt);
+    const dispatchMs = isoMs(task.youtubeDispatchAt) || updatedMs;
+    if (!dryRun && ["queued", "queued_media", "generating_media", "rendering"].includes(String(task.status || "")) &&
+        updatedMs > 0 && now - updatedMs >= 7 * DAY) {
+      task.status = "failed";
+      task.error = "Render task exceeded the seven-day safety window without completing. Media will be retained for a further 14 days before cleanup.";
+      task.updatedAt = new Date(now).toISOString();
+      await env.MEDIA_BUCKET.put(object.key, JSON.stringify(task), {
+        httpMetadata: { contentType: "application/json; charset=utf-8", cacheControl: "no-store" }
+      });
+      summary.staleRenderJobsMarkedFailed = (summary.staleRenderJobsMarkedFailed || 0) + 1;
+      continue;
+    }
+    const staleQueuedUpload =
+      statusNow === "upload_queued" && !task.youtubeUploadSessionUrl && !task.youtubeVideoId &&
+      dispatchMs > 0 && now - dispatchMs >= 2 * DAY;
+    const staleRetryWithoutSession =
+      statusNow === "upload_retryable" && !task.youtubeUploadSessionUrl && !task.youtubeVideoId &&
+      updatedMs > 0 && now - updatedMs >= 7 * DAY;
+    if (!dryRun && (staleQueuedUpload || staleRetryWithoutSession)) {
+      task.youtubeStatus = "needs_review";
+      task.youtubeError = "The publisher did not establish a resumable upload session within the safety window. Manual review is required.";
+      task.updatedAt = new Date(now).toISOString();
+      await env.MEDIA_BUCKET.put(object.key, JSON.stringify(task), {
+        httpMetadata: { contentType: "application/json; charset=utf-8", cacheControl: "no-store" }
+      });
+      summary.stalePublisherJobsMarkedForReview = (summary.stalePublisherJobsMarkedForReview || 0) + 1;
+      continue;
+    }
 
     const eligibility = ageEligibleTask(task, now);
     if (!eligibility.eligible) {
