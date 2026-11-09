@@ -40,5 +40,11 @@ jobs:
             renderer/render_long.py \
             renderer/youtube_publisher.py
 
+      - name: Validate Cloudflare Worker bundle and R2 binding
+        run: |
+          npx --yes wrangler@4 deploy --dry-run \
+            --config cloudflare/faithframe-api/wrangler.jsonc \
+            --outdir /tmp/gospel-inspiration-worker
+
       - name: Check whitespace errors
         run: git diff --check
