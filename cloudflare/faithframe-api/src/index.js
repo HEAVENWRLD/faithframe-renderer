@@ -558,22 +558,32 @@ async function dispatchReadyYoutube(env) {
       if (!task || task.status !== "ready") continue;
       if (!task.targetPublishAt || !Number.isFinite(Date.parse(task.targetPublishAt)) || Date.parse(task.targetPublishAt) > now) continue;
       const publishState = String(task.youtubeStatus || "pending");
-      if (publishState !== "pending") continue;
+      if (!["pending", "upload_retryable"].includes(publishState)) continue;
       const taskId = String(task.taskId || "");
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(taskId)) {
         skipped.push({ taskId: taskId.slice(0, 40), reason: "invalid_task_id" });
         continue;
       }
+      const attempts = Number(task.youtubeUploadAttempts || 0);
+      if (attempts >= 3) {
+        task.youtubeStatus = "needs_review";
+        task.youtubeError = "Automatic YouTube upload reached its three-attempt safety limit.";
+        task.updatedAt = new Date().toISOString();
+        await putJson(env.MEDIA_BUCKET, object.key, task);
+        skipped.push({ taskId, reason: "attempt_limit_needs_review" });
+        continue;
+      }
       task.youtubeStatus = "upload_queued";
+      task.youtubeUploadAttempts = attempts + 1;
       task.youtubeDispatchAt = new Date().toISOString();
       task.updatedAt = new Date().toISOString();
       await putJson(env.MEDIA_BUCKET, object.key, task);
       try {
         await githubDispatch(env, env.GITHUB_YOUTUBE_WORKFLOW || "ffmpeg-youtube-publish.yml", taskId);
-        dispatched.push({ taskId, format: task.format || "unknown" });
+        dispatched.push({ taskId, format: task.format || "unknown", attempt: task.youtubeUploadAttempts });
       } catch (error) {
         // A lost response could mean GitHub accepted the dispatch. Do not
-        // automatically dispatch again and risk a duplicate upload attempt.
+        // automatically send a second dispatch and risk a duplicate upload.
         task.youtubeStatus = "needs_review";
         task.youtubeError = "Could not confirm GitHub publisher dispatch: " + String(error.message || error).slice(0, 350);
         task.updatedAt = new Date().toISOString();
@@ -745,8 +755,11 @@ async function route(request, env) {
     if (!task) return json({ error: "Task not found." }, 404);
     if (task.youtubeVideoId) return json({ error: "A completed YouTube video is already recorded." }, 409);
     const input = await readJson(request, 10_000);
-    task.youtubeStatus = "needs_review";
-    task.youtubeError = String(input.message || "YouTube upload requires review.").slice(0, 700);
+    const message = String(input.message || "YouTube upload requires review.").slice(0, 700);
+    const transient = /HTTP (?:429|500|502|503|504)|transient|network interruption|could not reach|status check failed transiently/i.test(message);
+    const attempts = Number(task.youtubeUploadAttempts || 0);
+    task.youtubeStatus = transient && attempts < 3 ? "upload_retryable" : "needs_review";
+    task.youtubeError = message;
     task.updatedAt = new Date().toISOString();
     await putJson(env.MEDIA_BUCKET, key, task);
     return json({ ok: true, taskId, youtubeStatus: task.youtubeStatus });
