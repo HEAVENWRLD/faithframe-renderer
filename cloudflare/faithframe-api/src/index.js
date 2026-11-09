@@ -284,6 +284,19 @@ async function generateNarration(request, env) {
   return json({ ok: true, assetKey: key, contentType: "audio/mpeg", sizeBytes: bytes.byteLength, model: SPEECH_MODEL });
 }
 
+function scheduledEATIso(hour) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Nairobi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const values = {};
+  for (const part of parts) if (part.type !== "literal") values[part.type] = Number(part.value);
+  // Kenya remains UTC+3; 20:00 EAT is 17:00 UTC and 22:00 EAT is 19:00 UTC.
+  return new Date(Date.UTC(values.year, values.month - 1, values.day, Number(hour) - 3, 0, 0)).toISOString();
+}
+
 async function githubDispatch(env, workflow, taskId) {
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPOSITORY) throw new Error("GitHub Actions dispatch secrets are not configured.");
   const file = workflow || env.GITHUB_SHORT_WORKFLOW || "ffmpeg-short-production-render.yml";
@@ -329,6 +342,8 @@ async function createRenderTask(request, env) {
     taskId,
     status: "queued",
     format: "short",
+    targetPublishAt: String(input.targetPublishAt || scheduledEATIso(20)),
+    youtubeStatus: "pending",
     title: String(input.title || "A Message of Faith").slice(0, 180),
     description: String(input.description || "").slice(0, 5000),
     sceneAssets,
@@ -490,7 +505,8 @@ async function produceShort(request, env) {
     description: fields.description,
     sceneAssets,
     narration: { assetKey: narration.assetKey, contentType: "audio/mpeg" },
-    captionText: fields.voiceover
+    captionText: fields.voiceover,
+    targetPublishAt: scheduledEATIso(20)
   });
   await putJson(env.MEDIA_BUCKET, "jobs/" + jobId + "/production.json", {
     jobId,
