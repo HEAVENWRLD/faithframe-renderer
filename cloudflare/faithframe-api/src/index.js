@@ -360,15 +360,40 @@ async function createRenderTask(request, env) {
 }
 
 
+function headingRemainder(line, heading) {
+  let value = String(line || "").trim().replace(/^#{1,3}\s*/, "");
+  const target = String(heading || "").toLowerCase();
+  if (!value.toLowerCase().startsWith(target)) return null;
+  let rest = value.slice(target.length);
+  if (rest && !/^\s*(?:\([^)]*\))?\s*:/.test(rest)) return null;
+  rest = rest.replace(/^\s*\([^)]*\)\s*/, "").replace(/^\s*:\s*/, "").trim();
+  return rest;
+}
+
 function extractSection(script, heading, stopHeadings) {
-  const stop = stopHeadings.join("|");
-  const expression = new RegExp(
-    "(?:^|\\n)\\s*(?:#{1,3}\\s*)?" + heading +
-    "\\s*:?\\s*([\\s\\S]*?)(?=\\n\\s*(?:#{1,3}\\s*)?(?:" + stop + ")\\s*:?\\s*(?:\\n|$)|$)",
-    "i"
-  );
-  const match = String(script || "").match(expression);
-  return match ? match[1].trim() : "";
+  const lines = String(script || "").split(/\r?\n/);
+  const output = [];
+  let collecting = false;
+  for (const line of lines) {
+    if (!collecting) {
+      const value = headingRemainder(line, heading);
+      if (value !== null) {
+        collecting = true;
+        if (value) output.push(value);
+      }
+      continue;
+    }
+    let stop = false;
+    for (const name of stopHeadings) {
+      if (headingRemainder(line, name) !== null) {
+        stop = true;
+        break;
+      }
+    }
+    if (stop) break;
+    output.push(line);
+  }
+  return output.join("\n").trim();
 }
 
 function extractShortFields(script) {
@@ -378,14 +403,21 @@ function extractShortFields(script) {
   if (voiceover.length < 80) throw new Error("Generated Short did not contain a usable VOICEOVER section.");
   const visualPlan = extractSection(script, "VISUAL PLAN", ["ON-SCREEN CAPTIONS", "CAPTIONS", "DESCRIPTION", "HASHTAGS"]);
   const scenes = [];
+  let current = null;
   for (const line of visualPlan.split(/\r?\n/)) {
-    const match = line.match(/^\s*(?:[-*]\s*)?(?:scene\s*)?(\d{1,2})\s*[).:\-]\s*(.+?)\s*$/i);
-    if (!match) continue;
-    const sceneNumber = Number(match[1]);
-    const prompt = String(match[2] || "").trim();
-    if (sceneNumber >= 1 && sceneNumber <= 10 && prompt.length >= 20 &&
-        !scenes.some(item => item.sceneNumber === sceneNumber)) {
-      scenes.push({ sceneNumber, prompt });
+    const match = line.match(/^\s*(?:[-*]\s*)?(?:scene\s*)?(\d{1,2})\s*[).:\-\u2013\u2014]\s*(.+?)\s*$/i);
+    if (match) {
+      const sceneNumber = Number(match[1]);
+      const prompt = String(match[2] || "").trim();
+      if (sceneNumber >= 1 && sceneNumber <= 10 && prompt.length >= 20 &&
+          !scenes.some(item => item.sceneNumber === sceneNumber)) {
+        current = { sceneNumber, prompt };
+        scenes.push(current);
+      } else {
+        current = null;
+      }
+    } else if (current && line.trim()) {
+      current.prompt += " " + line.trim();
     }
   }
   const ordered = scenes.sort((a, b) => a.sceneNumber - b.sceneNumber).slice(0, 6);
