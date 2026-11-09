@@ -1,11 +1,6 @@
 name: Deploy Gospel Inspiration Cloudflare Worker
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "cloudflare/faithframe-api/**"
-      - ".github/workflows/deploy-cloudflare-worker.yml"
   workflow_dispatch:
 
 permissions:
@@ -29,6 +24,41 @@ jobs:
           node --check cloudflare/faithframe-api/src/index.js
           node --check cloudflare/faithframe-api/src/long.js
           node --check cloudflare/faithframe-api/src/cleanup.js
+
+      - name: Verify required GitHub repository secrets
+        env:
+          CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ACTIVEPIECES_API_TOKEN: \${{ secrets.ACTIVEPIECES_API_TOKEN }}
+          FFMPEG_WORKER_TOKEN: \${{ secrets.FFMPEG_WORKER_TOKEN }}
+          POLLINATIONS_API_KEY: \${{ secrets.POLLINATIONS_API_KEY }}
+          HF_TOKEN: \${{ secrets.HF_TOKEN }}
+          WORKERS_AI_API_TOKEN: \${{ secrets.WORKERS_AI_API_TOKEN }}
+          FISH_API_KEY: \${{ secrets.FISH_API_KEY }}
+          RENDER_GITHUB_TOKEN: \${{ secrets.RENDER_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in \
+            CLOUDFLARE_API_TOKEN \
+            CLOUDFLARE_ACCOUNT_ID \
+            ACTIVEPIECES_API_TOKEN \
+            FFMPEG_WORKER_TOKEN \
+            POLLINATIONS_API_KEY \
+            HF_TOKEN \
+            WORKERS_AI_API_TOKEN \
+            FISH_API_KEY \
+            RENDER_GITHUB_TOKEN; do
+            if [ -z "\${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "\${#missing[@]}" -gt 0 ]; then
+            printf 'Missing GitHub repository secrets:\n'
+            printf ' - %s\n' "\${missing[@]}"
+            exit 1
+          fi
+          echo "All Cloudflare Worker deployment and runtime secrets are present."
 
       - name: Deploy Worker and synchronize encrypted runtime secrets
         uses: cloudflare/wrangler-action@v4
