@@ -524,6 +524,34 @@ async function route(request, env) {
     return task ? json(task) : json({ error: "Task not found." }, 404);
   }
 
+  const thumbnailMatch = path.match(/^\/v1\/tasks\/([0-9a-f-]{36})\/thumbnail$/i);
+  if (thumbnailMatch) {
+    const taskId = thumbnailMatch[1];
+    const taskKey = "tasks/" + taskId + "/task.json";
+    const task = await getJson(env.MEDIA_BUCKET, taskKey);
+    if (!task) return json({ error: "Task not found." }, 404);
+    if (request.method === "PUT") {
+      const body = await request.arrayBuffer();
+      if (body.byteLength < 1000 || body.byteLength > 12 * 1024 * 1024) return json({ error: "Thumbnail size is invalid." }, 400);
+      const signature = new Uint8Array(body.slice(0, 8));
+      if (signature[0] !== 0x89 || signature[1] !== 0x50 || signature[2] !== 0x4e || signature[3] !== 0x47) return json({ error: "Thumbnail must be a PNG image." }, 400);
+      const key = "tasks/" + taskId + "/thumbnail.png";
+      await env.MEDIA_BUCKET.put(key, body, { httpMetadata: { contentType: "image/png", cacheControl: "private, no-store" } });
+      task.thumbnailKey = key;
+      task.updatedAt = new Date().toISOString();
+      await putJson(env.MEDIA_BUCKET, taskKey, task);
+      return json({ ok: true, taskId: taskId, thumbnailKey: key, sizeBytes: body.byteLength });
+    }
+    if (request.method === "GET") {
+      if (!task.thumbnailKey) return json({ error: "Thumbnail is not ready." }, 404);
+      const object = await env.MEDIA_BUCKET.get(task.thumbnailKey);
+      if (!object) return json({ error: "Thumbnail object is missing." }, 404);
+      const headers = new Headers({ "content-type": "image/png", "cache-control": "private, no-store" });
+      headers.set("content-length", String(object.size));
+      return new Response(object.body, { headers });
+    }
+  }
+
   const resultMatch = path.match(/^\/v1\/tasks\/([0-9a-f-]{36})\/result$/i);
   if (resultMatch) {
     const taskId = resultMatch[1];
