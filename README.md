@@ -55,6 +55,12 @@ The Worker uses a repository-scoped token to dispatch the workflows. The workflo
 
 ActivePieces will need the deployed Worker URL and the same \`FFMPEG_WORKER_TOKEN\` configured as a Bearer credential on the API request step. Keep all production flows disabled until the provider secrets, render-worker secrets and YouTube uploader are configured and the test render has completed successfully.
 
+## Long-video renderer
+
+The long workflow is `.github/workflows/ffmpeg-long-production-render.yml`. It reads a 12-section task, generates 12 landscape scene images with FLUX.2 Klein 4B and 12 narration clips with Fish Audio `s2.1-pro-free`, and also generates a 16:9 thumbnail with FLUX. It downloads the media privately from R2 and invokes `renderer/render_long.py`.
+
+The long renderer creates phrase-level subtitles from each section's narration, adds gentle image motion and chapter labels, concatenates the 12 sections, mixes the locally generated oscillator-based ambient bed, adds a three-second subscribe end card, and encodes a 1280×720 H.264/AAC MP4. It rejects a final runtime outside 8–12 minutes and validates the codecs and output size before returning the file to R2. The thumbnail is saved separately at `/v1/tasks/{taskId}/thumbnail`.
+
 ## Current Short renderer manifest
 
 The Short renderer accepts a local JSON manifest containing:
