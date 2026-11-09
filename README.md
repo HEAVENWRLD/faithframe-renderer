@@ -65,6 +65,19 @@ The uploader stores the YouTube resumable session URL privately in R2 before sen
 
 ActivePieces will need the deployed Worker URL and the same \`FFMPEG_WORKER_TOKEN\` configured as a Bearer credential on the API request step. Keep all production flows disabled until the provider secrets, render-worker secrets and YouTube uploader are configured and the test render has completed successfully.
 
+## R2 storage cleanup and retention
+
+The ActivePieces maintenance flow calls `POST /v1/maintenance/cleanup` once per day (03:00 Africa/Nairobi) using `ACTIVEPIECES_API_TOKEN`. The Worker scans private R2 task records and removes media under these rules:
+
+- After YouTube upload is confirmed, remove generated source images/audio and the local rendered MP4 after 48 hours. Keep the small task record so a completed YouTube video ID continues to prevent duplicate publishing.
+- Failed or abandoned render jobs retain their media for 14 days, then their large media is removed and the task metadata is marked expired.
+- Items requiring manual review retain their media for 60 days. A saved resumable YouTube upload session is protected from automatic deletion.
+- Unreferenced partial-generation assets are removed after 24 hours.
+- Future scheduled videos, active renders, queued/in-progress/retryable uploads and tasks with saved unfinished resumable sessions are protected.
+- Each cleanup run deletes at most 300 R2 objects. If more work remains, the next daily run continues. Task JSON records are not automatically deleted.
+
+The cleanup endpoint accepts `{"dryRun":true}` for a non-destructive report. The normal scheduled request uses `{"dryRun":false}`. It returns counts of checked tasks, protected uploads, deleted objects and bytes freed. No broad R2 lifecycle expiration rule is applied to the active `jobs/` or `tasks/` prefixes, because that could remove videos that are still waiting to publish.
+
 ## Long-video renderer
 
 The long workflow is `.github/workflows/ffmpeg-long-production-render.yml`. It reads a 12-section task, generates 12 landscape scene images with FLUX.2 Klein 4B and 12 narration clips with Fish Audio `s2.1-pro-free`, and also generates a 16:9 thumbnail with FLUX. It downloads the media privately from R2 and invokes `renderer/render_long.py`.
