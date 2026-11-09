@@ -1,4 +1,5 @@
 import { produceLong } from "./long.js";
+import { cleanupMedia } from "./cleanup.js";
 
 const SHORT_SYSTEM_PROMPT = [
   "You are a thoughtful Christian cinematic YouTube Shorts writer.",
@@ -29,7 +30,7 @@ function bearer(request) {
 
 function authorized(request, env) {
   const routePath = new URL(request.url).pathname;
-  const activePiecesRoute = routePath === "/v1/short/produce" || routePath === "/v1/long/produce" || routePath === "/v1/youtube/dispatch-ready";
+  const activePiecesRoute = routePath === "/v1/short/produce" || routePath === "/v1/long/produce" || routePath === "/v1/youtube/dispatch-ready" || routePath === "/v1/maintenance/cleanup";
   const expected = String(activePiecesRoute ? (env.ACTIVEPIECES_API_TOKEN || "") : (env.FFMPEG_WORKER_TOKEN || ""));
   const supplied = bearer(request);
   return expected.length >= 32 && supplied.length === expected.length && timingSafeEqual(supplied, expected);
@@ -640,6 +641,10 @@ async function route(request, env) {
   if (request.method === "POST" && path === "/v1/short/produce") return await produceShort(request, env);
   if (request.method === "POST" && path === "/v1/long/produce") return await produceLong(request, env);
   if (request.method === "POST" && path === "/v1/youtube/dispatch-ready") return await dispatchReadyYoutube(env);
+  if (request.method === "POST" && path === "/v1/maintenance/cleanup") {
+    const input = await readJson(request, 10_000);
+    return json(await cleanupMedia(env, { dryRun: input.dryRun === true }));
+  }
   if (request.method === "POST" && path === "/v1/image") return await generateImage(request, env);
   if (request.method === "POST" && path === "/v1/narration") return await generateNarration(request, env);
   if (request.method === "POST" && path === "/v1/tasks") return await createRenderTask(request, env);
