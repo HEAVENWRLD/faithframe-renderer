@@ -516,7 +516,7 @@ def run(task_id: str) -> int:
             raise RuntimeError("YouTube returned incomplete visibility/audience status; automatic completion was not marked.")
         processing = str((verified.get("processingDetails") or {}).get("processingStatus") or "")
         thumbnail = False
-        if task.get("format") == "long" and processing == "succeeded":
+        if processing == "succeeded":
             thumbnail = upload_thumbnail(api_base, worker_token, task_id, access_token, video_id, processing)
         saved = report_result(api_base, worker_token, task_id, video_id, privacy, made_for_kids, thumbnail)
         print("YouTube video verified:", saved.get("videoUrl"))
