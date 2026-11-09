@@ -354,12 +354,150 @@ async function createRenderTask(request, env) {
   return json({ ok: true, taskId, status: task.status });
 }
 
+
+function extractSection(script, heading, stopHeadings) {
+  const stop = stopHeadings.join("|");
+  const expression = new RegExp(
+    "(?:^|\\n)\\s*(?:#{1,3}\\s*)?" + heading +
+    "\\s*:?\\s*([\\s\\S]*?)(?=\\n\\s*(?:#{1,3}\\s*)?(?:" + stop + ")\\s*:?\\s*(?:\\n|$)|$)",
+    "i"
+  );
+  const match = String(script || "").match(expression);
+  return match ? match[1].trim() : "";
+}
+
+function extractShortFields(script) {
+  const titleMatch = String(script).match(/(?:^|\n)\s*(?:#{1,3}\s*)?TITLE\s*:?\s*([^\n]+)/i);
+  const title = titleMatch ? titleMatch[1].replace(/^[\s"'*]+|[\s"'*]+$/g, "").slice(0, 180) : "A Message of Faith";
+  const voiceover = extractSection(script, "VOICEOVER", ["VISUAL PLAN", "ON-SCREEN CAPTIONS", "CAPTIONS", "DESCRIPTION", "HASHTAGS"]);
+  if (voiceover.length < 80) throw new Error("Generated Short did not contain a usable VOICEOVER section.");
+  const visualPlan = extractSection(script, "VISUAL PLAN", ["ON-SCREEN CAPTIONS", "CAPTIONS", "DESCRIPTION", "HASHTAGS"]);
+  const scenes = [];
+  for (const line of visualPlan.split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:[-*]\s*)?(?:scene\s*)?(\d{1,2})\s*[).:\-]\s*(.+?)\s*$/i);
+    if (!match) continue;
+    const sceneNumber = Number(match[1]);
+    const prompt = String(match[2] || "").trim();
+    if (sceneNumber >= 1 && sceneNumber <= 10 && prompt.length >= 20 &&
+        !scenes.some(item => item.sceneNumber === sceneNumber)) {
+      scenes.push({ sceneNumber, prompt });
+    }
+  }
+  const ordered = scenes.sort((a, b) => a.sceneNumber - b.sceneNumber).slice(0, 6);
+  if (ordered.length < 4) throw new Error("Generated Short must contain at least four numbered visual scenes.");
+  const description = extractSection(script, "DESCRIPTION", ["HASHTAGS"]).slice(0, 4000);
+  const bibleReference = extractSection(script, "BIBLE REFERENCE", ["HOOK", "VOICEOVER", "VISUAL PLAN"]).split(/\r?\n/)[0].slice(0, 160);
+  const category = extractSection(script, "CATEGORY", ["BIBLE REFERENCE", "HOOK", "VOICEOVER"]).split(/\r?\n/)[0].slice(0, 100);
+  return { title, voiceover, scenes: ordered, description, bibleReference, category };
+}
+
+async function internalJsonCall(handler, env, payload) {
+  const request = new Request("https://internal.gospel-inspiration/v1", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const response = await handler(request, env);
+  const result = await response.json();
+  if (!response.ok || result?.ok === false || result?.error) {
+    throw new Error(String(result?.error || "A media provider request failed.").slice(0, 600));
+  }
+  return result;
+}
+
+async function produceShort(request, env) {
+  const input = await readJson(request, 100_000);
+  const jobId = crypto.randomUUID();
+  const voiceStyle = ["female", "male", "auto"].includes(String(input.voiceStyle || "").toLowerCase())
+    ? String(input.voiceStyle).toLowerCase() : "female";
+  const provider = input.provider === "huggingface" ? "huggingface" : "pollinations";
+  const scriptResult = await internalJsonCall(generateScript, env, {
+    niche: String(input.niche || "Christianity").slice(0, 180),
+    topic: String(input.topic || "").slice(0, 180),
+    style: String(input.style || "cinematic"),
+    language: String(input.language || "English"),
+    provider,
+    recentIdeas: Array.isArray(input.recentIdeas) ? input.recentIdeas.slice(0, 24) : []
+  });
+  const fields = extractShortFields(scriptResult.script);
+  const sceneAssets = await Promise.all(fields.scenes.map(async (scene) => {
+    const prompt = [
+      "Original vertical 9:16 cinematic Christian YouTube Shorts scene, 576x1024.",
+      "Premium cinematic realism, clear focal subject, natural dramatic light, reverent hopeful mood.",
+      "No text, letters, symbols, captions, typography, logos, watermarks or borders.",
+      "Keep recurring character appearance, age, clothing and color palette consistent across the scenes.",
+      scene.prompt
+    ].join(" ");
+    const saved = await internalJsonCall(generateImage, env, {
+      jobId,
+      fileName: "scene-" + String(scene.sceneNumber).padStart(2, "0"),
+      prompt,
+      width: 576,
+      height: 1024
+    });
+    return {
+      sceneNumber: scene.sceneNumber,
+      assetKey: saved.assetKey,
+      contentType: saved.contentType || "image/png",
+      prompt: scene.prompt
+    };
+  }));
+  const narration = await internalJsonCall(generateNarration, env, {
+    jobId,
+    text: fields.voiceover,
+    voiceStyle
+  });
+  const taskResult = await internalJsonCall(createRenderTask, env, {
+    taskId: jobId,
+    title: fields.title,
+    description: fields.description,
+    sceneAssets,
+    narration: { assetKey: narration.assetKey, contentType: "audio/mpeg" },
+    captionText: fields.voiceover
+  });
+  await putJson(env.MEDIA_BUCKET, "jobs/" + jobId + "/production.json", {
+    jobId,
+    status: taskResult.status || "rendering",
+    title: fields.title,
+    script: scriptResult.script,
+    provider: scriptResult.provider,
+    fallbackUsed: scriptResult.fallbackUsed,
+    voiceStyle,
+    bibleReference: fields.bibleReference,
+    category: fields.category,
+    description: fields.description,
+    scenePrompts: fields.scenes,
+    sceneAssets,
+    narrationAssetKey: narration.assetKey,
+    taskId: taskResult.taskId,
+    createdAt: new Date().toISOString()
+  });
+  return json({
+    ok: true,
+    jobId,
+    taskId: taskResult.taskId,
+    status: taskResult.status,
+    title: fields.title,
+    description: fields.description,
+    script: scriptResult.script,
+    provider: scriptResult.provider,
+    fallbackUsed: scriptResult.fallbackUsed,
+    voiceStyle,
+    bibleReference: fields.bibleReference,
+    category: fields.category,
+    sceneCount: sceneAssets.length,
+    sceneAssets,
+    narrationAssetKey: narration.assetKey
+  });
+}
+
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   if (request.method === "GET" && path === "/health") return json({ ok: true, service: "gospel-inspiration-media", version: 1 });
   if (!authorized(request, env)) return json({ error: "Unauthorized." }, 401);
   if (request.method === "POST" && path === "/v1/script") return await generateScript(request, env);
+  if (request.method === "POST" && path === "/v1/short/produce") return await produceShort(request, env);
   if (request.method === "POST" && path === "/v1/image") return await generateImage(request, env);
   if (request.method === "POST" && path === "/v1/narration") return await generateNarration(request, env);
   if (request.method === "POST" && path === "/v1/tasks") return await createRenderTask(request, env);
