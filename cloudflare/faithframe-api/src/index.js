@@ -28,7 +28,9 @@ function bearer(request) {
 }
 
 function authorized(request, env) {
-  const expected = String(env.FFMPEG_WORKER_TOKEN || "");
+  const routePath = new URL(request.url).pathname;
+  const activePiecesRoute = routePath === "/v1/short/produce" || routePath === "/v1/long/produce";
+  const expected = String(activePiecesRoute ? (env.ACTIVEPIECES_API_TOKEN || "") : (env.FFMPEG_WORKER_TOKEN || ""));
   const supplied = bearer(request);
   return expected.length >= 32 && supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
