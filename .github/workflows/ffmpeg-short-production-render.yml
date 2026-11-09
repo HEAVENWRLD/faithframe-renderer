@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       task_id:
-        description: Opaque Hatchable Short draft ID
+        description: Opaque Cloudflare render task UUID
         required: true
         type: string
 
@@ -12,14 +12,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: faithframe-short-${{ inputs.task_id }}
+  group: gospel-short-\${{ inputs.task_id }}
   cancel-in-progress: false
 
 jobs:
   render:
-    name: Render and return one private Gospel Inspiration Short
+    name: Render one private Gospel Inspiration Short
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: Check out the renderer
@@ -35,29 +35,13 @@ jobs:
       - name: Validate renderer Python files
         run: python3 -m py_compile renderer/render_short.py renderer/worker.py
 
-      - name: Render the private task and return the MP4 to Hatchable
+      - name: Download, render and return the private MP4 through Cloudflare
         env:
-          RENDER_TASK_ID: ${{ inputs.task_id }}
-          HATCHABLE_API_BASE_URL: https://faithframe-render.hatchable.site/api
-          FFMPEG_WORKER_TOKEN: ${{ secrets.FFMPEG_WORKER_TOKEN }}
+          RENDER_TASK_ID: \${{ inputs.task_id }}
+          RENDER_API_BASE_URL: \${{ vars.RENDER_API_BASE_URL }}
+          FFMPEG_WORKER_TOKEN: \${{ secrets.FFMPEG_WORKER_TOKEN }}
         run: |
           set -euo pipefail
+          test -n "$RENDER_API_BASE_URL"
           test -n "$FFMPEG_WORKER_TOKEN"
           python3 renderer/worker.py --task-id "$RENDER_TASK_ID"
-
-      - name: Report the failed render to Hatchable
-        if: failure()
-        env:
-          RENDER_TASK_ID: ${{ inputs.task_id }}
-          HATCHABLE_API_BASE_URL: https://faithframe-render.hatchable.site/api
-          FFMPEG_WORKER_TOKEN: ${{ secrets.FFMPEG_WORKER_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -n "${FFMPEG_WORKER_TOKEN:-}" ]; then
-            curl --silent --show-error --max-time 30 \
-              -X POST "${HATCHABLE_API_BASE_URL}/tasks/failure" \
-              -H "Authorization: Bearer ${FFMPEG_WORKER_TOKEN}" \
-              -H "Content-Type: application/json" \
-              --data-binary "{\"taskId\":\"$RENDER_TASK_ID\",\"message\":\"GitHub Actions FFmpeg render failed; inspect this run's logs.\"}" \
-              -o /dev/null || true
-          fi
