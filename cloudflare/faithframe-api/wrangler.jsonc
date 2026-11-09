@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json.schemastore.org/wrangler",
+  "name": "gospel-inspiration-media-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-09",
+  "workers_dev": true,
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "gospel-inspiration-media"
+    }
+  ],
+  "vars": {
+    "GITHUB_REPOSITORY": "HEAVENWRLD/faithframe-renderer",
+    "GITHUB_SHORT_WORKFLOW": "ffmpeg-short-production-render.yml",
+    "GITHUB_REF": "main"
+  },
+  "secrets": {
+    "required": [
+      "FFMPEG_WORKER_TOKEN",
+      "POLLINATIONS_API_KEY",
+      "HF_TOKEN",
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CLOUDFLARE_API_TOKEN",
+      "FISH_API_KEY",
+      "GITHUB_TOKEN"
+    ]
+  }
+}
