@@ -1,3 +1,5 @@
+import { produceLong } from "./long.js";
+
 const SHORT_SYSTEM_PROMPT = [
   "You are a thoughtful Christian cinematic YouTube Shorts writer.",
   "Create an original 30–60 second Short (about 85–135 spoken words) for a broad Christian audience.",
@@ -499,6 +501,7 @@ async function route(request, env) {
   if (!authorized(request, env)) return json({ error: "Unauthorized." }, 401);
   if (request.method === "POST" && path === "/v1/script") return await generateScript(request, env);
   if (request.method === "POST" && path === "/v1/short/produce") return await produceShort(request, env);
+  if (request.method === "POST" && path === "/v1/long/produce") return await produceLong(request, env);
   if (request.method === "POST" && path === "/v1/image") return await generateImage(request, env);
   if (request.method === "POST" && path === "/v1/narration") return await generateNarration(request, env);
   if (request.method === "POST" && path === "/v1/tasks") return await createRenderTask(request, env);
