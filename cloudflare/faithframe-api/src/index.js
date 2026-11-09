@@ -274,7 +274,8 @@ async function generateNarration(request, env) {
   const bytes = await response.arrayBuffer();
   if (bytes.byteLength < 1000) return json({ ok: false, error: "Fish Audio returned an unexpectedly small audio file." }, 502);
   const jobId = String(input.jobId || crypto.randomUUID()).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
-  const key = safeKey("jobs/" + jobId + "/audio/narration.mp3");
+  const fileName = String(input.fileName || "narration").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
+  const key = safeKey("jobs/" + jobId + "/audio/" + fileName + ".mp3");
   await env.MEDIA_BUCKET.put(key, bytes, { httpMetadata: { contentType: "audio/mpeg", cacheControl: "private, max-age=0" } });
   return json({ ok: true, assetKey: key, contentType: "audio/mpeg", sizeBytes: bytes.byteLength, model: SPEECH_MODEL });
 }
