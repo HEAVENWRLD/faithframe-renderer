@@ -1,0 +1,57 @@
+name: Deploy Gospel Inspiration Cloudflare Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cloudflare/faithframe-api/**"
+      - ".github/workflows/deploy-cloudflare-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gospel-inspiration-cloudflare-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy private media API and R2 binding
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Check Worker JavaScript syntax
+        run: |
+          node --check cloudflare/faithframe-api/src/index.js
+          node --check cloudflare/faithframe-api/src/long.js
+          node --check cloudflare/faithframe-api/src/cleanup.js
+
+      - name: Deploy Worker and synchronize encrypted runtime secrets
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare/faithframe-api
+          wranglerVersion: "4"
+          secrets: |
+            CLOUDFLARE_ACCOUNT_ID
+            ACTIVEPIECES_API_TOKEN
+            FFMPEG_WORKER_TOKEN
+            POLLINATIONS_API_KEY
+            HF_TOKEN
+            WORKERS_AI_API_TOKEN
+            FISH_API_KEY
+            GITHUB_TOKEN
+        env:
+          CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ACTIVEPIECES_API_TOKEN: \${{ secrets.ACTIVEPIECES_API_TOKEN }}
+          FFMPEG_WORKER_TOKEN: \${{ secrets.FFMPEG_WORKER_TOKEN }}
+          POLLINATIONS_API_KEY: \${{ secrets.POLLINATIONS_API_KEY }}
+          HF_TOKEN: \${{ secrets.HF_TOKEN }}
+          WORKERS_AI_API_TOKEN: \${{ secrets.WORKERS_AI_API_TOKEN }}
+          FISH_API_KEY: \${{ secrets.FISH_API_KEY }}
+          GITHUB_TOKEN: \${{ secrets.RENDER_GITHUB_TOKEN }}
