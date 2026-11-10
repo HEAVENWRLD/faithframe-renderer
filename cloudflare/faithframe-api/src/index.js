@@ -320,7 +320,7 @@ function scheduledEATIso(hour) {
   }).formatToParts(new Date());
   const values = {};
   for (const part of parts) if (part.type !== "literal") values[part.type] = Number(part.value);
-  // Kenya remains UTC+3; 20:00 EAT is 17:00 UTC and 22:00 EAT is 19:00 UTC.
+  // Kenya remains UTC+3; 18:00 EAT is 15:00 UTC and 20:00 EAT is 17:00 UTC.
   return new Date(Date.UTC(values.year, values.month - 1, values.day, Number(hour) - 3, 0, 0)).toISOString();
 }
 
@@ -337,7 +337,7 @@ async function githubDispatch(env, workflow, taskId) {
       "x-github-api-version": "2022-11-28",
       "user-agent": "Gospel-Inspiration-Renderer"
     },
-    body: JSON.stringify({ ref: env.GITHUB_REF || "main", inputs: { task_id: taskId } }),
+    body: JSON.stringify({ ref: env.GITHUB_REF || "main", inputs: { task_id: taskId, privacy_status: "public" } }),
     signal: AbortSignal.timeout(30_000)
   });
   if (response.status !== 204) {
