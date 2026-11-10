@@ -737,6 +737,8 @@ async function route(request, env) {
       const key = "tasks/" + taskId + "/rendered.mp4";
       await env.MEDIA_BUCKET.put(key, body, { httpMetadata: { contentType: "video/mp4", cacheControl: "private, no-store" } });
       task.status = "ready";
+      // Clear any stale error left by an earlier failed render attempt.
+      delete task.error;
       task.resultKey = key;
       task.resultSizeBytes = body.byteLength;
       task.updatedAt = new Date().toISOString();
