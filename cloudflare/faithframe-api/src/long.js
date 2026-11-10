@@ -215,7 +215,7 @@ export async function produceLong(request,env) {
   const now = new Date().toISOString();
   const task = {
     taskId:taskId,status:"queued_media",format:"long",formatType:format.type,
-    targetPublishAt:scheduledEATIso(22),youtubeStatus:"pending",
+    targetPublishAt:scheduledEATIso(18),youtubeStatus:"pending",
     title:String(story.title).slice(0,100),topic:String(story.topic).slice(0,300),
     description:story.description,tags:story.tags,bibleReferences:story.bibleReferences,
     thumbnailPrompt:story.thumbnailPrompt,sections:story.sections,wordCount:story.wordCount,
