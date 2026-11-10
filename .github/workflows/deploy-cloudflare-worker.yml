@@ -27,15 +27,15 @@ jobs:
 
       - name: Verify required GitHub repository secrets
         env:
-          CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          ACTIVEPIECES_API_TOKEN: \${{ secrets.ACTIVEPIECES_API_TOKEN }}
-          FFMPEG_WORKER_TOKEN: \${{ secrets.FFMPEG_WORKER_TOKEN }}
-          POLLINATIONS_API_KEY: \${{ secrets.POLLINATIONS_API_KEY }}
-          HF_TOKEN: \${{ secrets.HF_TOKEN }}
-          WORKERS_AI_API_TOKEN: \${{ secrets.WORKERS_AI_API_TOKEN }}
-          FISH_API_KEY: \${{ secrets.FISH_API_KEY }}
-          RENDER_GITHUB_TOKEN: \${{ secrets.RENDER_GITHUB_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ACTIVEPIECES_API_TOKEN: ${{ secrets.ACTIVEPIECES_API_TOKEN }}
+          FFMPEG_WORKER_TOKEN: ${{ secrets.FFMPEG_WORKER_TOKEN }}
+          POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          WORKERS_AI_API_TOKEN: ${{ secrets.WORKERS_AI_API_TOKEN }}
+          FISH_API_KEY: ${{ secrets.FISH_API_KEY }}
+          RENDER_GITHUB_TOKEN: ${{ secrets.RENDER_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           missing=()
@@ -49,13 +49,13 @@ jobs:
             WORKERS_AI_API_TOKEN \
             FISH_API_KEY \
             RENDER_GITHUB_TOKEN; do
-            if [ -z "\${!name:-}" ]; then
+            if [ -z "${!name:-}" ]; then
               missing+=("$name")
             fi
           done
-          if [ "\${#missing[@]}" -gt 0 ]; then
+          if [ "${#missing[@]}" -gt 0 ]; then
             printf 'Missing GitHub repository secrets:\n'
-            printf ' - %s\n' "\${missing[@]}"
+            printf ' - %s\n' "${missing[@]}"
             exit 1
           fi
           echo "All Cloudflare Worker deployment and runtime secrets are present."
@@ -63,8 +63,8 @@ jobs:
       - name: Deploy Worker and synchronize encrypted runtime secrets
         uses: cloudflare/wrangler-action@v4
         with:
-          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: cloudflare/faithframe-api
           wranglerVersion: "4"
           secrets: |
@@ -77,11 +77,11 @@ jobs:
             FISH_API_KEY
             GITHUB_TOKEN
         env:
-          CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          ACTIVEPIECES_API_TOKEN: \${{ secrets.ACTIVEPIECES_API_TOKEN }}
-          FFMPEG_WORKER_TOKEN: \${{ secrets.FFMPEG_WORKER_TOKEN }}
-          POLLINATIONS_API_KEY: \${{ secrets.POLLINATIONS_API_KEY }}
-          HF_TOKEN: \${{ secrets.HF_TOKEN }}
-          WORKERS_AI_API_TOKEN: \${{ secrets.WORKERS_AI_API_TOKEN }}
-          FISH_API_KEY: \${{ secrets.FISH_API_KEY }}
-          GITHUB_TOKEN: \${{ secrets.RENDER_GITHUB_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ACTIVEPIECES_API_TOKEN: ${{ secrets.ACTIVEPIECES_API_TOKEN }}
+          FFMPEG_WORKER_TOKEN: ${{ secrets.FFMPEG_WORKER_TOKEN }}
+          POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          WORKERS_AI_API_TOKEN: ${{ secrets.WORKERS_AI_API_TOKEN }}
+          FISH_API_KEY: ${{ secrets.FISH_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.RENDER_GITHUB_TOKEN }}
