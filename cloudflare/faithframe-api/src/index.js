@@ -30,8 +30,10 @@ function bearer(request) {
 
 function authorized(request, env) {
   const routePath = new URL(request.url).pathname;
+  const taskMetadataRead = request.method === "GET" &&
+    /^\/v1\/tasks\/[0-9a-f-]{36}$/i.test(routePath);
   const activePiecesMetadataRead = request.method === "GET" && (
-    /^\/v1\/tasks\/[0-9a-f-]{36}$/i.test(routePath) ||
+    taskMetadataRead ||
     /^\/v1\/assets\/jobs\/[0-9a-f-]{36}\/production\.json$/i.test(routePath)
   );
   const activePiecesRoute =
@@ -40,8 +42,23 @@ function authorized(request, env) {
     routePath === "/v1/youtube/dispatch-ready" ||
     routePath === "/v1/maintenance/cleanup" ||
     activePiecesMetadataRead;
-  const expected = String(activePiecesRoute ? (env.ACTIVEPIECES_API_TOKEN || "") : (env.FFMPEG_WORKER_TOKEN || "")).trim();
   const supplied = bearer(request);
+
+  // Task metadata is read-only and is consumed by both ActivePieces and the
+  // GitHub publisher. Accept either service's own token on this endpoint only.
+  if (taskMetadataRead) {
+    const allowedTokens = [
+      String(env.ACTIVEPIECES_API_TOKEN || "").trim(),
+      String(env.FFMPEG_WORKER_TOKEN || "").trim()
+    ];
+    return allowedTokens.some(expected =>
+      expected.length >= 32 &&
+      supplied.length === expected.length &&
+      timingSafeEqual(supplied, expected)
+    );
+  }
+
+  const expected = String(activePiecesRoute ? (env.ACTIVEPIECES_API_TOKEN || "") : (env.FFMPEG_WORKER_TOKEN || "")).trim();
   return expected.length >= 32 && supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
