@@ -115,7 +115,12 @@ def refresh_access_token() -> str:
     return token
 
 
-def read_task(api_base: str, worker_token: str, task_id: str) -> dict[str, Any]:
+def read_task(
+    api_base: str,
+    worker_token: str,
+    task_id: str,
+    allow_auth_failure_retry: bool = False,
+) -> dict[str, Any]:
     task = json_request(api_base + "/v1/tasks/" + task_id, worker_token)
     if task.get("taskId") != task_id:
         raise RuntimeError("Cloudflare returned a different render task ID.")
@@ -125,7 +130,22 @@ def read_task(api_base: str, worker_token: str, task_id: str) -> dict[str, Any]:
         print("This task already has a YouTube video ID; duplicate upload prevented.")
         return task
     if task.get("youtubeStatus") == "needs_review":
-        raise RuntimeError("This task is marked needs_review and will not be uploaded automatically.")
+        prior_error = str(task.get("youtubeError") or "")
+        safe_fresh_retry = (
+            allow_auth_failure_retry
+            and prior_error.startswith("Cloudflare publishing API returned HTTP 401:")
+            and not task.get("youtubeUploadSessionUrl")
+            and not task.get("youtubeVideoId")
+        )
+        if not safe_fresh_retry:
+            raise RuntimeError(
+                "This task is marked needs_review. The explicit retry option only permits "
+                "the recorded Cloudflare HTTP 401 when no YouTube upload session or video ID exists."
+            )
+        print(
+            "Explicit retry approved for the recorded Cloudflare HTTP 401; "
+            "no YouTube upload session or video ID exists, so a fresh session is safe."
+        )
     return task
 
 
@@ -485,7 +505,10 @@ def run(task_id: str) -> int:
     if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89a-fA-F][0-9a-fA-F]{3}-[0-9a-fA-F]{12}", task_id):
         raise RuntimeError("A valid render task UUID is required.")
 
-    task = read_task(api_base, worker_token, task_id)
+    allow_auth_failure_retry = (
+        os.environ.get("YOUTUBE_RETRY_AFTER_WORKER_AUTH_FIX", "").strip().lower() == "true"
+    )
+    task = read_task(api_base, worker_token, task_id, allow_auth_failure_retry)
     if task.get("youtubeVideoId"):
         print("Already uploaded: " + str(task["youtubeVideoId"]))
         return 0
