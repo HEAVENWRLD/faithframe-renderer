@@ -31,7 +31,7 @@ function bearer(request) {
 function authorized(request, env) {
   const routePath = new URL(request.url).pathname;
   const activePiecesRoute = routePath === "/v1/short/produce" || routePath === "/v1/long/produce" || routePath === "/v1/youtube/dispatch-ready" || routePath === "/v1/maintenance/cleanup";
-  const expected = String(activePiecesRoute ? (env.ACTIVEPIECES_API_TOKEN || "") : (env.FFMPEG_WORKER_TOKEN || ""));
+  const expected = String(activePiecesRoute ? (env.ACTIVEPIECES_API_TOKEN || "") : (env.FFMPEG_WORKER_TOKEN || "")).trim();
   const supplied = bearer(request);
   return expected.length >= 32 && supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
@@ -443,7 +443,7 @@ function extractShortFields(script) {
   if (ordered.length < 4) throw new Error("Generated Short must contain at least four numbered visual scenes.");
   const description = extractSection(script, "DESCRIPTION", ["HASHTAGS"]).slice(0, 4000);
   const hashtagText = extractSection(script, "HASHTAGS", []);
-  const tags = Array.from(hashtagText.matchAll(/#?([A-Za-z0-9][A-Za-z0-9_-]{1,39})/g))
+  const tags = Array.from(hashtagText.matchAll(/#([A-Za-z0-9][A-Za-z0-9_-]{1,39})/g))
     .map(match => match[1])
     .filter((value, index, values) => values.findIndex(item => item.toLowerCase() === value.toLowerCase()) === index)
     .slice(0, 15);
