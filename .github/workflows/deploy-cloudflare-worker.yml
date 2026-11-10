@@ -1,6 +1,12 @@
 name: Deploy Gospel Inspiration Cloudflare Worker
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "cloudflare/faithframe-api/**"
+      - ".github/workflows/deploy-cloudflare-worker.yml"
   workflow_dispatch:
 
 permissions:
