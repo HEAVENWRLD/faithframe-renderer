@@ -16,6 +16,11 @@ on:
           - unlisted
           - public
         default: private
+      retry_after_worker_auth_fix:
+        description: Allow retry only for the recorded Cloudflare HTTP 401 when no YouTube session or video ID exists
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -45,6 +50,7 @@ jobs:
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           YOUTUBE_PRIVACY_STATUS: ${{ inputs.privacy_status }}
+          YOUTUBE_RETRY_AFTER_WORKER_AUTH_FIX: ${{ inputs.retry_after_worker_auth_fix }}
         run: |
           set -euo pipefail
           test -n "$RENDER_API_BASE_URL"
