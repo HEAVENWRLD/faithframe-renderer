@@ -39,7 +39,22 @@ def request_json(url: str, token: str) -> dict[str, Any]:
         with urllib.request.urlopen(request, timeout=120) as response:
             raw = response.read(2 * 1024 * 1024)
     except urllib.error.HTTPError as exc:
-        raise RuntimeError("Cloudflare render API returned HTTP " + str(exc.code) + " while reading task metadata.") from None
+        status = str(exc.code)
+        cf_ray = exc.headers.get("cf-ray", "not-provided") if exc.headers else "not-provided"
+        content_type = exc.headers.get("content-type", "not-provided") if exc.headers else "not-provided"
+        detail = ""
+        try:
+            detail = exc.read(700).decode("utf-8", "replace")
+            detail = re.sub(r"(?i)Bearer\\s+[A-Za-z0-9._~+-]+", "Bearer [redacted]", detail)
+            detail = re.sub(r"<[^>]+>", " ", detail)
+            detail = re.sub(r"\\s+", " ", detail).strip()[:500]
+        except Exception:
+            detail = "response body unavailable"
+        raise RuntimeError(
+            "Cloudflare render API returned HTTP " + status +
+            " while reading task metadata (CF-Ray " + cf_ray +
+            ", content-type " + content_type + "). Response: " + (detail or "empty")
+        ) from None
     except Exception:
         raise RuntimeError("Could not reach the Cloudflare render API.") from None
     try:
