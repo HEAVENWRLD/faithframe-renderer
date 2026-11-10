@@ -74,7 +74,10 @@ def json_request(url: str, token: str, method: str = "GET", payload: dict[str, A
         raise RuntimeError("Cloudflare returned an unreadable publishing response.") from None
     if not isinstance(result, dict):
         raise RuntimeError("Cloudflare returned an invalid publishing response.")
-    if result.get("error"):
+    # A task record may legitimately retain a historical render "error"
+    # after a later successful retry. Treat only error-shaped API responses
+    # (which have no taskId) as failures.
+    if result.get("error") and not result.get("taskId"):
         raise RuntimeError(str(result["error"])[:500])
     return result
 
@@ -133,18 +136,17 @@ def read_task(
         prior_error = str(task.get("youtubeError") or "")
         safe_fresh_retry = (
             allow_auth_failure_retry
-            and prior_error.startswith("Cloudflare publishing API returned HTTP 401:")
             and not task.get("youtubeUploadSessionUrl")
             and not task.get("youtubeVideoId")
         )
         if not safe_fresh_retry:
             raise RuntimeError(
-                "This task is marked needs_review. The explicit retry option only permits "
-                "the recorded Cloudflare HTTP 401 when no YouTube upload session or video ID exists."
+                "This task is marked needs_review. A manual fresh retry is allowed only "
+                "when the explicit override is enabled and no YouTube session or video ID exists."
             )
         print(
-            "Explicit retry approved for the recorded Cloudflare HTTP 401; "
-            "no YouTube upload session or video ID exists, so a fresh session is safe."
+            "Explicit safe retry approved: no YouTube upload session or video ID exists, "
+            "so no earlier media upload could have started."
         )
     return task
 
