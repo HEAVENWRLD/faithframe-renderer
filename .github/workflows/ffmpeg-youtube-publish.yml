@@ -7,6 +7,15 @@ on:
         description: Opaque Cloudflare render task UUID
         required: true
         type: string
+      privacy_status:
+        description: YouTube visibility for this upload (private is safest for testing)
+        required: true
+        type: choice
+        options:
+          - private
+          - unlisted
+          - public
+        default: private
 
 permissions:
   contents: read
@@ -35,6 +44,7 @@ jobs:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_PRIVACY_STATUS: ${{ inputs.privacy_status }}
         run: |
           set -euo pipefail
           test -n "$RENDER_API_BASE_URL"
