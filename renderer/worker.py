@@ -309,8 +309,17 @@ def main() -> int:
     task = request_json(api_base + "/v1/tasks/" + task_id, token)
     if str(task.get("taskId", "")) != task_id:
         raise RuntimeError("Cloudflare returned a different render task ID.")
-    if task.get("status") not in ("queued", "rendering"):
-        raise RuntimeError("Render task is not in a renderable state: " + str(task.get("status")))
+    task_status = str(task.get("status") or "")
+    if task_status == "failed":
+        # A failed task may be retried from its saved R2 source assets when a
+        # user manually dispatches this workflow again with the same task ID.
+        # Keep the prior failure visible in the new run logs for diagnosis.
+        previous_error = str(task.get("error") or "").strip()
+        print("Retrying previously failed Short task from its saved source assets.")
+        if previous_error:
+            print("Previous render attempt error:", previous_error[:500])
+    elif task_status not in ("queued", "rendering"):
+        raise RuntimeError("Render task is not in a renderable state: " + task_status)
 
     scene_assets = task.get("sceneAssets")
     if not isinstance(scene_assets, list) or not 4 <= len(scene_assets) <= 30:
