@@ -32,7 +32,7 @@ MAX_OUTPUT_BYTES = 100 * 1024 * 1024
 def request_json(url: str, token: str) -> dict[str, Any]:
     request = urllib.request.Request(
         url,
-        headers={"Authorization": "Bearer " + token, "Accept": "application/json"},
+        headers={"Authorization": "Bearer " + token, "Accept": "application/json", "User-Agent": "Gospel-Inspiration-Short-Renderer/2.0"},
         method="GET",
     )
     try:
@@ -218,6 +218,7 @@ def upload_result(api_base: str, token: str, task_id: str, video_path: Path) -> 
         data=video_bytes,
         headers={
             "Authorization": "Bearer " + token,
+            "User-Agent": "Gospel-Inspiration-Short-Renderer/2.0",
             "Content-Type": "video/mp4",
             "Accept": "application/json",
         },
@@ -251,6 +252,7 @@ def upload_thumbnail(api_base: str, token: str, task_id: str, image_path: Path) 
         data=data,
         headers={
             "Authorization": "Bearer " + token,
+            "User-Agent": "Gospel-Inspiration-Short-Renderer/2.0",
             "Content-Type": "image/png",
             "Accept": "application/json",
         },
@@ -277,7 +279,7 @@ def report_failure(api_base: str, token: str, task_id: str, message: str) -> Non
     request = urllib.request.Request(
         api_base + "/v1/tasks/" + task_id + "/failure",
         data=payload,
-        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json", "User-Agent": "Gospel-Inspiration-Short-Renderer/2.0"},
         method="POST",
     )
     try:
