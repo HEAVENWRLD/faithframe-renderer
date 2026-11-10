@@ -245,8 +245,47 @@ def upload_thumbnail(api_base: str, token: str, task_id: str, image_path: Path) 
     if size < 1000 or size > 12 * 1024 * 1024:
         raise RuntimeError("Short thumbnail size is outside the allowed range.")
     data = image_path.read_bytes()
-    if len(data) < 8 or data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise RuntimeError("Short thumbnail is not a valid PNG image.")
+    png_signature = b"\x89PNG\r\n\x1a\n"
+    if len(data) < 8:
+        raise RuntimeError("Short thumbnail is too small to be a valid image.")
+    if not data.startswith(png_signature):
+        # Image-generation providers may return JPEG/WebP bytes even though
+        # older task metadata called every thumbnail a PNG. Let FFmpeg inspect
+        # the actual file signature and normalize the image before upload.
+        normalized_path = image_path.with_name("thumbnail-normalized.png")
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-i", str(image_path),
+                    "-frames:v", "1",
+                    "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,"
+                           "pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+                    "-update", "1",
+                    str(normalized_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("FFmpeg timed out while converting the generated Short thumbnail to PNG.") from None
+        except subprocess.CalledProcessError as exc:
+            detail = re.sub(r"\s+", " ", str(exc.stderr or "")).strip()[:300]
+            header = data[:16].hex()
+            raise RuntimeError(
+                "Generated Short thumbnail is not PNG and FFmpeg could not decode it "
+                "(file header " + header + "). " + (detail or "Unsupported image format.")
+            ) from None
+        if not normalized_path.is_file():
+            raise RuntimeError("FFmpeg did not create the normalized Short thumbnail.")
+        data = normalized_path.read_bytes()
+        if len(data) < 1000 or not data.startswith(png_signature):
+            raise RuntimeError("FFmpeg did not produce a valid PNG Short thumbnail.")
+        print("Generated thumbnail converted to a valid 1280x720 PNG with FFmpeg.")
+    if len(data) < 1000 or len(data) > 12 * 1024 * 1024:
+        raise RuntimeError("Normalized Short thumbnail size is outside the allowed range.")
     request = urllib.request.Request(
         api_base + "/v1/tasks/" + task_id + "/thumbnail",
         data=data,
