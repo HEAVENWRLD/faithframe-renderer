@@ -175,7 +175,9 @@ def store_session(api_base: str, worker_token: str, task_id: str, session_url: s
         raise RuntimeError("Cloudflare did not confirm that the resumable session was saved.")
 
 
-def start_session(access_token: str, task: dict[str, Any], total_bytes: int) -> str:
+def start_session(access_token: str, task: dict[str, Any], total_bytes: int, privacy_status: str) -> str:
+    if privacy_status not in ("private", "unlisted", "public"):
+        raise RuntimeError("YOUTUBE_PRIVACY_STATUS must be private, unlisted or public.")
     title = str(task.get("title") or "Gospel Inspiration Christian Video").strip()[:100]
     description = str(task.get("description") or "An original Christian video from Gospel Inspiration. Subscribe for more Bible stories, faith reflections, and prayer.").strip()[:4800]
     source_tags = task.get("tags") if isinstance(task.get("tags"), list) else []
@@ -205,7 +207,7 @@ def start_session(access_token: str, task: dict[str, Any], total_bytes: int) -> 
             "categoryId": "22",
         },
         "status": {
-            "privacyStatus": "public",
+            "privacyStatus": privacy_status,
             "selfDeclaredMadeForKids": False,
             "containsSyntheticMedia": True,
         },
@@ -488,6 +490,10 @@ def run(task_id: str) -> int:
         print("Already uploaded: " + str(task["youtubeVideoId"]))
         return 0
 
+    privacy_status = os.environ.get("YOUTUBE_PRIVACY_STATUS", "private").strip().lower()
+    if privacy_status not in ("private", "unlisted", "public"):
+        raise RuntimeError("YOUTUBE_PRIVACY_STATUS must be private, unlisted or public.")
+    print("Requested YouTube visibility:", privacy_status)
     access_token = refresh_access_token()
     with __import__("tempfile").TemporaryDirectory(prefix="gospel-youtube-upload-") as temporary:
         video_path = Path(temporary) / "finished-video.mp4"
@@ -499,7 +505,7 @@ def run(task_id: str) -> int:
         if session_url:
             print("Resuming the saved YouTube session after checking the confirmed byte offset.")
         else:
-            session_url = start_session(access_token, task, total_bytes)
+            session_url = start_session(access_token, task, total_bytes, privacy_status)
             # Save the session before transmitting the first media byte. If a
             # runner stops, the next run can resume this exact session.
             store_session(api_base, worker_token, task_id, session_url, total_bytes)
@@ -521,8 +527,11 @@ def run(task_id: str) -> int:
         saved = report_result(api_base, worker_token, task_id, video_id, privacy, made_for_kids, thumbnail)
         print("YouTube video verified:", saved.get("videoUrl"))
         print("Visibility:", privacy, "| Made for kids:", made_for_kids, "| Thumbnail applied:", thumbnail)
-        if privacy != "public" or made_for_kids:
-            raise RuntimeError("The upload completed, but YouTube did not confirm Public visibility and the expected audience settings. Check YouTube Studio.")
+        if privacy != privacy_status or made_for_kids:
+            raise RuntimeError(
+                "The upload completed, but YouTube visibility did not match the requested "
+                + privacy_status + " setting or the audience setting was unexpected. Check YouTube Studio."
+            )
     return 0
 
 
