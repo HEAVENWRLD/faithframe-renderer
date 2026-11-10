@@ -9,7 +9,7 @@ on:
         type: string
       privacy_status:
         description: YouTube visibility for this upload (private is safest for testing)
-        required: true
+        required: false
         type: choice
         options:
           - private
