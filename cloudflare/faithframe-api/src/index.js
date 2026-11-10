@@ -328,6 +328,10 @@ async function githubDispatch(env, workflow, taskId) {
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPOSITORY) throw new Error("GitHub Actions dispatch secrets are not configured.");
   const file = workflow || env.GITHUB_SHORT_WORKFLOW || "ffmpeg-short-production-render.yml";
   const url = "https://api.github.com/repos/" + env.GITHUB_REPOSITORY + "/actions/workflows/" + encodeURIComponent(file) + "/dispatches";
+  const isYoutubePublisher = file === (env.GITHUB_YOUTUBE_WORKFLOW || "ffmpeg-youtube-publish.yml");
+  const workflowInputs = isYoutubePublisher
+    ? { task_id: taskId, privacy_status: "public" }
+    : { task_id: taskId };
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -337,7 +341,7 @@ async function githubDispatch(env, workflow, taskId) {
       "x-github-api-version": "2022-11-28",
       "user-agent": "Gospel-Inspiration-Renderer"
     },
-    body: JSON.stringify({ ref: env.GITHUB_REF || "main", inputs: { task_id: taskId, privacy_status: "public" } }),
+    body: JSON.stringify({ ref: env.GITHUB_REF || "main", inputs: workflowInputs }),
     signal: AbortSignal.timeout(30_000)
   });
   if (response.status !== 204) {
