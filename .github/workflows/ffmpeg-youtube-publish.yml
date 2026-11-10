@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: gospel-youtube-\${{ inputs.task_id }}
+  group: gospel-youtube-${{ inputs.task_id }}
   cancel-in-progress: false
 
 jobs:
@@ -30,11 +30,11 @@ jobs:
 
       - name: Upload with the saved YouTube resumable session
         env:
-          RENDER_API_BASE_URL: \${{ vars.RENDER_API_BASE_URL }}
-          FFMPEG_WORKER_TOKEN: \${{ secrets.FFMPEG_WORKER_TOKEN }}
-          YOUTUBE_CLIENT_ID: \${{ secrets.YOUTUBE_CLIENT_ID }}
-          YOUTUBE_CLIENT_SECRET: \${{ secrets.YOUTUBE_CLIENT_SECRET }}
-          YOUTUBE_REFRESH_TOKEN: \${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          RENDER_API_BASE_URL: ${{ vars.RENDER_API_BASE_URL }}
+          FFMPEG_WORKER_TOKEN: ${{ secrets.FFMPEG_WORKER_TOKEN }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: |
           set -euo pipefail
           test -n "$RENDER_API_BASE_URL"
@@ -42,4 +42,4 @@ jobs:
           test -n "$YOUTUBE_CLIENT_ID"
           test -n "$YOUTUBE_CLIENT_SECRET"
           test -n "$YOUTUBE_REFRESH_TOKEN"
-          python3 renderer/youtube_publisher.py --task-id "\${{ inputs.task_id }}"
+          python3 renderer/youtube_publisher.py --task-id "${{ inputs.task_id }}"
