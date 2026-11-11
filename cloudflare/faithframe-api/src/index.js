@@ -584,7 +584,7 @@ async function produceShort(request, env) {
     title: fields.title,
     description: fields.description,
     tags: fields.tags,
-    thumbnailAsset: { assetKey: thumbnail.assetKey, contentType: "image/png" },
+    thumbnailAsset: { assetKey: thumbnail.assetKey, contentType: thumbnail.contentType || "image/png" },
     sceneAssets,
     narration: { assetKey: narration.assetKey, contentType: "audio/mpeg" },
     captionText: fields.voiceover,
