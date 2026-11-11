@@ -91,7 +91,8 @@ def download_asset(api_base: str, token: str, key: str, destination: Path, limit
                     raise RuntimeError("A source media file exceeds the configured download limit.")
                 output.write(chunk)
     except urllib.error.HTTPError as exc:
-        raise RuntimeError("A Cloudflare R2 asset download failed with HTTP " + str(exc.code) + ".") from None
+        detail = exc.read(700).decode("utf-8", errors="replace").strip()
+        raise RuntimeError("A Cloudflare R2 asset download failed with HTTP " + str(exc.code) + ": " + detail[:350]) from None
     except RuntimeError:
         raise
     except Exception:
@@ -228,7 +229,8 @@ def upload_result(api_base: str, token: str, task_id: str, video_path: Path) -> 
         with urllib.request.urlopen(request, timeout=300) as response:
             raw = response.read(256 * 1024)
     except urllib.error.HTTPError as exc:
-        raise RuntimeError("Cloudflare rejected the rendered MP4 with HTTP " + str(exc.code) + ".") from None
+        detail = exc.read(900).decode("utf-8", errors="replace").strip()
+        raise RuntimeError("Cloudflare rejected the rendered MP4 with HTTP " + str(exc.code) + ": " + detail[:450]) from None
     except Exception:
         raise RuntimeError("Could not return the rendered MP4 to Cloudflare R2.") from None
     try:
@@ -301,7 +303,8 @@ def upload_thumbnail(api_base: str, token: str, task_id: str, image_path: Path) 
         with urllib.request.urlopen(request, timeout=180) as response:
             raw = response.read(256 * 1024)
     except urllib.error.HTTPError as exc:
-        raise RuntimeError("Cloudflare rejected the Short thumbnail (HTTP " + str(exc.code) + ").") from None
+        detail = exc.read(900).decode("utf-8", errors="replace").strip()
+        raise RuntimeError("Cloudflare rejected the Short thumbnail (HTTP " + str(exc.code) + "): " + detail[:450]) from None
     except Exception:
         raise RuntimeError("Could not return the Short thumbnail to private R2 storage.") from None
     try:
@@ -349,14 +352,36 @@ def main() -> int:
     if str(task.get("taskId", "")) != task_id:
         raise RuntimeError("Cloudflare returned a different render task ID.")
     task_status = str(task.get("status") or "")
+    if task_status == "ready" and task.get("resultKey"):
+        print("The existing Short MP4 is already stored in Cloudflare; treating this run as successful.")
+        return 0
     if task_status == "failed":
-        # A failed task may be retried from its saved R2 source assets when a
-        # user manually dispatches this workflow again with the same task ID.
-        # Keep the prior failure visible in the new run logs for diagnosis.
-        previous_error = str(task.get("error") or "").strip()
-        print("Retrying previously failed Short task from its saved source assets.")
+        if task.get("resultKey") or task.get("youtubeVideoId") or task.get("youtubeUploadSessionUrl"):
+            raise RuntimeError("A failed Short task with a completed render or YouTube upload state cannot be retried.")
+        previous_error = str(task.get("error") or task.get("lastRenderError") or "").strip()
+        print("Requesting a guarded automatic Short-render retry from Cloudflare.")
         if previous_error:
-            print("Previous render attempt error:", previous_error[:500])
+            print("Previous render failure:", previous_error[:500])
+        retry_request = urllib.request.Request(
+            api_base + "/v1/tasks/" + task_id + "/render-retry",
+            data=b"{}",
+            headers={
+                "Authorization": "Bearer " + token,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "Gospel-Inspiration-Short-Renderer/2.0",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(retry_request, timeout=60) as response:
+                retry_result = json.loads(response.read(64 * 1024).decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read(700).decode("utf-8", errors="replace")
+            raise RuntimeError("Cloudflare did not approve the Short render retry (HTTP " + str(exc.code) + "): " + detail[:350]) from None
+        if not isinstance(retry_result, dict) or retry_result.get("ok") is not True:
+            raise RuntimeError("Cloudflare did not confirm the Short render retry.")
+        print("Cloudflare approved render attempt", retry_result.get("attempt"), "of", retry_result.get("maxAttempts"))
     elif task_status not in ("queued", "rendering"):
         raise RuntimeError("Render task is not in a renderable state: " + task_status)
 
@@ -455,7 +480,16 @@ if __name__ == "__main__":
         task_id = parsed.task_id
         raise SystemExit(main())
     except Exception as exc:
-        print("RENDER WORKER FAILED:", str(exc), file=sys.stderr)
+        message = str(exc)
+        print("RENDER WORKER FAILED:", message, file=sys.stderr)
         if api_base.startswith("https://") and len(token) >= 32 and re.fullmatch(r"[0-9a-fA-F-]{36}", task_id):
-            report_failure(api_base, token, task_id, str(exc))
+            report_failure(api_base, token, task_id, message)
+        lowered = message.lower()
+        transient = any(marker in lowered for marker in (
+            "http 408", "http 425", "http 429", "http 500", "http 502", "http 503", "http 504",
+            "timed out", "timeout", "temporarily unavailable", "temporary network",
+            "connection reset", "connection aborted", "remote end closed", "could not reach",
+            "name or service not known", "temporary failure in name resolution"
+        ))
+        raise SystemExit(75 if transient else 1)
         raise SystemExit(1)
