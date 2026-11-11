@@ -89,6 +89,7 @@ def safe_extension(content_type: str, fallback: str) -> str:
         "image/png": ".png",
         "image/jpeg": ".jpg",
         "image/webp": ".webp",
+        "image/gif": ".gif",
         "audio/mpeg": ".mp3",
         "audio/mp3": ".mp3",
     }.get(mime, fallback)
@@ -189,6 +190,7 @@ def generate_one_section(api_base: str, token: str, task_id: str, task: dict[str
         "heading": str(section.get("heading", "")),
         "narrationText": str(section.get("narration", "")),
         "imageAssetKey": image["assetKey"],
+        "imageContentType": str(image.get("contentType") or "image/png"),
         "narrationAssetKey": narration["assetKey"],
     }
 
@@ -222,12 +224,22 @@ def run(task_id: str) -> int:
     if task.get("taskId") != task_id or task.get("format") != "long":
         raise RuntimeError("This is not a valid long-video render task.")
     status = str(task.get("status") or "")
-    if status not in ("queued_media", "generating_media", "rendering", "failed"):
+    if status == "ready" and task.get("resultKey"):
+        print("The existing long-video render is already stored in Cloudflare; treating this run as successful.")
+        return 0
+    if status == "failed":
+        if task.get("resultKey") or task.get("youtubeVideoId") or task.get("youtubeUploadSessionUrl"):
+            raise RuntimeError("A failed task with an existing rendered result or YouTube upload state cannot be retried automatically.")
+        previous_error = str(task.get("error") or task.get("lastRenderError") or "").strip()
+        print("Requesting a guarded automatic render retry from Cloudflare.")
+        if previous_error:
+            print("Previous render failure:", previous_error[:500])
+        retry = post_json(api_base + "/v1/tasks/" + task_id + "/render-retry", token, {})
+        print("Cloudflare approved render attempt", retry.get("attempt"), "of", retry.get("maxAttempts"))
+        task = read_json(api_base + "/v1/tasks/" + task_id, token)
+        status = str(task.get("status") or "")
+    if status not in ("queued_media", "generating_media", "rendering"):
         raise RuntimeError("The long-video task is not ready: " + status)
-    if status == "failed" and (
-        task.get("resultKey") or task.get("youtubeVideoId") or task.get("youtubeUploadSessionUrl")
-    ):
-        raise RuntimeError("A failed task with an existing rendered result or YouTube upload state cannot be retried automatically.")
     sections = task.get("sections")
     if not isinstance(sections, list) or len(sections) != 12:
         raise RuntimeError("A long video must contain exactly 12 narration sections.")
@@ -273,7 +285,7 @@ def run(task_id: str) -> int:
 
         for result in results:
             number = int(result["sectionNumber"])
-            image_path = assets / ("scene-" + str(number).zfill(2) + ".png")
+            image_path = assets / ("scene-" + str(number).zfill(2) + safe_extension(result.get("imageContentType", "image/png"), ".img"))
             audio_path = assets / ("narration-" + str(number).zfill(2) + ".mp3")
             total += download_asset(api_base, token, result["imageAssetKey"], image_path)
             total += download_asset(api_base, token, result["narrationAssetKey"], audio_path)
@@ -285,7 +297,7 @@ def run(task_id: str) -> int:
                 "narration": "assets/" + audio_path.name,
             })
 
-        thumbnail_source = assets / "thumbnail-source.img"
+        thumbnail_source = assets / ("thumbnail-source" + safe_extension(thumbnail.get("contentType", "image/png"), ".img"))
         thumbnail_path = assets / "thumbnail.png"
         total += download_asset(api_base, token, thumbnail["assetKey"], thumbnail_source)
         if total > MAX_TOTAL_BYTES:
@@ -357,7 +369,16 @@ if __name__ == "__main__":
     try:
         raise SystemExit(run(args.task_id))
     except Exception as error:
-        print("LONG RENDER WORKER FAILED:", str(error), file=sys.stderr)
+        message = str(error)
+        print("LONG RENDER WORKER FAILED:", message, file=sys.stderr)
         if API.startswith("https://") and len(TOKEN) >= 32 and re.fullmatch(r"[0-9a-fA-F-]{36}", args.task_id):
-            report_failure(API, TOKEN, args.task_id, str(error))
-        raise SystemExit(1)
+            report_failure(API, TOKEN, args.task_id, message)
+        lowered = message.lower()
+        transient = any(marker in lowered for marker in (
+            "http 408", "http 425", "http 429", "http 500", "http 502", "http 503", "http 504",
+            "timed out", "timeout", "temporarily unavailable", "temporary network",
+            "connection reset", "connection aborted", "remote end closed", "could not reach",
+            "name or service not known", "temporary failure in name resolution"
+        ))
+        # Exit 75 is reserved for transient failures; the workflow retries only those.
+        raise SystemExit(75 if transient else 1)
