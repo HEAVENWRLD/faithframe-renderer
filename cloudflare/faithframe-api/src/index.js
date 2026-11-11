@@ -245,6 +245,30 @@ function decodeBase64(value) {
   return bytes;
 }
 
+function detectImageFormat(bytes) {
+  if (bytes.length >= 8 &&
+      bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e &&
+      bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a &&
+      bytes[6] === 0x1a && bytes[7] === 0x0a) {
+    return { extension: "png", contentType: "image/png" };
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return { extension: "jpg", contentType: "image/jpeg" };
+  }
+  if (bytes.length >= 12 &&
+      String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+      String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") {
+    return { extension: "webp", contentType: "image/webp" };
+  }
+  if (bytes.length >= 6) {
+    const signature = String.fromCharCode(...bytes.slice(0, 6));
+    if (signature === "GIF87a" || signature === "GIF89a") {
+      return { extension: "gif", contentType: "image/gif" };
+    }
+  }
+  throw new Error("Image provider returned an unsupported or unrecognized image format.");
+}
+
 async function generateImage(request, env) {
   const input = await readJson(request, 100_000);
   if (!env.CLOUDFLARE_ACCOUNT_ID || !env.WORKERS_AI_API_TOKEN) {
@@ -273,11 +297,12 @@ async function generateImage(request, env) {
     return json({ ok: false, error: "Cloudflare FLUX.2 Klein 4B did not return an image.", details: data && data.errors || [] }, 502);
   }
   const bytes = decodeBase64(data.result.image);
+  const imageFormat = detectImageFormat(bytes);
   const jobId = String(input.jobId || crypto.randomUUID()).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
   const fileName = String(input.fileName || "scene-01").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
-  const key = safeKey("jobs/" + jobId + "/images/" + fileName + ".png");
-  await env.MEDIA_BUCKET.put(key, bytes, { httpMetadata: { contentType: "image/png", cacheControl: "private, max-age=0" } });
-  return json({ ok: true, assetKey: key, contentType: "image/png", sizeBytes: bytes.byteLength, width, height });
+  const key = safeKey("jobs/" + jobId + "/images/" + fileName + "." + imageFormat.extension);
+  await env.MEDIA_BUCKET.put(key, bytes, { httpMetadata: { contentType: imageFormat.contentType, cacheControl: "private, max-age=0" } });
+  return json({ ok: true, assetKey: key, contentType: imageFormat.contentType, sizeBytes: bytes.byteLength, width, height });
 }
 
 async function generateNarration(request, env) {
@@ -379,8 +404,10 @@ async function createRenderTask(request, env) {
     description: String(input.description || "").slice(0, 5000),
     tags: Array.isArray(input.tags) ? input.tags.map(value => String(value).trim()).filter(Boolean).slice(0, 15) : [],
     thumbnailAsset: input.thumbnailAsset && input.thumbnailAsset.assetKey
-      ? { assetKey: safeKey(input.thumbnailAsset.assetKey), contentType: "image/png" } : null,
+      ? { assetKey: safeKey(input.thumbnailAsset.assetKey), contentType: String(input.thumbnailAsset.contentType || "image/png") } : null,
     sceneAssets,
+    renderAttemptCount: 1,
+    renderMaxAttempts: 3,
     narration,
     music: input.music && input.music.assetKey ? { assetKey: safeKey(input.music.assetKey), contentType: "audio/wav" } : null,
     outro: input.outro && input.outro.assetKey ? { assetKey: safeKey(input.outro.assetKey), contentType: String(input.outro.contentType || "image/svg+xml") } : null,
@@ -828,6 +855,29 @@ async function route(request, env) {
     return json({ ok: true, taskId, youtubeStatus: task.youtubeStatus });
   }
 
+  const renderRetryMatch = path.match(/^\/v1\/tasks\/([0-9a-f-]{36})\/render-retry$/i);
+  if (request.method === "POST" && renderRetryMatch) {
+    const taskId = renderRetryMatch[1];
+    const key = "tasks/" + taskId + "/task.json";
+    const task = await getJson(env.MEDIA_BUCKET, key);
+    if (!task) return json({ error: "Task not found." }, 404);
+    if (task.resultKey || task.status === "ready" || task.youtubeVideoId || task.youtubeUploadSessionUrl) {
+      return json({ error: "A completed render or YouTube upload session exists; automatic render retry is blocked." }, 409);
+    }
+    if (task.status !== "failed") return json({ error: "Only a failed render task can enter automatic retry." , status: task.status }, 409);
+    const attempts = Number(task.renderAttemptCount || 1);
+    const maxAttempts = Math.max(1, Math.min(3, Number(task.renderMaxAttempts || 3)));
+    if (attempts >= maxAttempts) return json({ error: "Render retry limit reached.", status: "needs_review", attempts }, 409);
+    task.renderAttemptCount = attempts + 1;
+    task.status = task.format === "long" ? "generating_media" : "rendering";
+    task.lastRenderError = String(task.error || task.lastRenderError || "").slice(0, 700);
+    delete task.error;
+    task.renderRetryStartedAt = new Date().toISOString();
+    task.updatedAt = new Date().toISOString();
+    await putJson(env.MEDIA_BUCKET, key, task);
+    return json({ ok: true, taskId, status: task.status, attempt: task.renderAttemptCount, maxAttempts });
+  }
+
   const failMatch = path.match(/^\/v1\/tasks\/([0-9a-f-]{36})\/failure$/i);
   if (request.method === "POST" && failMatch) {
     const taskId = failMatch[1];
@@ -835,11 +885,18 @@ async function route(request, env) {
     const task = await getJson(env.MEDIA_BUCKET, key);
     if (!task) return json({ error: "Task not found." }, 404);
     const body = await readJson(request, 10_000);
+    const message = String(body.message || "Renderer failed.").slice(0, 700);
+    if (task.resultKey || task.status === "ready") {
+      return json({ ok: true, taskId, status: "ready", alreadyRendered: true });
+    }
     task.status = "failed";
-    task.error = String(body.message || "Renderer failed.").slice(0, 600);
+    task.error = message;
+    task.lastRenderError = message;
+    task.renderFailedAt = new Date().toISOString();
+    task.renderFailureCount = Number(task.renderFailureCount || 0) + 1;
     task.updatedAt = new Date().toISOString();
     await putJson(env.MEDIA_BUCKET, key, task);
-    return json({ ok: true, taskId, status: task.status });
+    return json({ ok: true, taskId, status: task.status, renderAttemptCount: Number(task.renderAttemptCount || 1) });
   }
 
   return json({ error: "Not found." }, 404);
