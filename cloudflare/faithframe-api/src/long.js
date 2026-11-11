@@ -216,6 +216,7 @@ export async function produceLong(request,env) {
   const task = {
     taskId:taskId,status:"queued_media",format:"long",formatType:format.type,
     targetPublishAt:scheduledEATIso(18),youtubeStatus:"pending",
+    renderAttemptCount:1,renderMaxAttempts:3,
     title:String(story.title).slice(0,100),topic:String(story.topic).slice(0,300),
     description:story.description,tags:story.tags,bibleReferences:story.bibleReferences,
     thumbnailPrompt:story.thumbnailPrompt,sections:story.sections,wordCount:story.wordCount,
