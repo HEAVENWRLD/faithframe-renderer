@@ -305,10 +305,12 @@ def main() -> int:
             f"fontsize=30:x=(w-text_w)/2:y=680,fps={FPS},format=yuv420p[outro]"
         )
 
+    # Movie-style subtitles: modest size, centered at the bottom, with a clean
+    # black outline/shadow instead of a large filled caption box.
     style = (
-        "FontName=DejaVu Sans,FontSize=30,Bold=1,PrimaryColour=&H00FFFFFF,"
-        "OutlineColour=&H80000000,BackColour=&H90040712,BorderStyle=3,"
-        "Outline=1,Shadow=0,Alignment=2,MarginV=142"
+        "FontName=DejaVu Sans,FontSize=24,Bold=0,PrimaryColour=&H00FFFFFF,"
+        "OutlineColour=&H00000000,BorderStyle=1,"
+        "Outline=2,Shadow=1,Alignment=2,MarginL=58,MarginR=58,MarginV=70,WrapStyle=0"
     )
     graph.append(f"[story]subtitles=filename='{filter_path(normalized_srt)}':force_style='{style}'[captioned]")
     graph.append("[captioned]drawbox=x=0:y=0:w=720:h=172:color=black@0.48:t=fill:enable='lt(t,3.3)'[headerbg]")
