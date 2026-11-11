@@ -139,9 +139,13 @@ def upload_file(api_base: str, token: str, url_path: str, path: Path, content_ty
         with urllib.request.urlopen(request, timeout=360) as response:
             result = json.loads(response.read(256 * 1024).decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        raise RuntimeError("Cloudflare could not store a rendered asset (HTTP " + str(exc.code) + ").") from None
-    except Exception:
-        raise RuntimeError("Could not return the rendered asset to Cloudflare R2.") from None
+        detail = exc.read(1200).decode("utf-8", errors="replace").strip()
+        label = url_path.rsplit("/", 1)[-1] or "asset"
+        raise RuntimeError(
+            "Cloudflare could not store " + label + " (HTTP " + str(exc.code) + "): " + detail[:500]
+        ) from None
+    except Exception as exc:
+        raise RuntimeError("Could not return the rendered asset to Cloudflare R2: " + str(exc)[:300]) from None
     if not isinstance(result, dict) or result.get("ok") is not True:
         raise RuntimeError("Cloudflare did not confirm the rendered asset upload.")
     return result
@@ -217,8 +221,13 @@ def run(task_id: str) -> int:
     task = read_json(api_base + "/v1/tasks/" + task_id, token)
     if task.get("taskId") != task_id or task.get("format") != "long":
         raise RuntimeError("This is not a valid long-video render task.")
-    if task.get("status") not in ("queued_media", "generating_media", "rendering"):
-        raise RuntimeError("The long-video task is not ready: " + str(task.get("status")))
+    status = str(task.get("status") or "")
+    if status not in ("queued_media", "generating_media", "rendering", "failed"):
+        raise RuntimeError("The long-video task is not ready: " + status)
+    if status == "failed" and (
+        task.get("resultKey") or task.get("youtubeVideoId") or task.get("youtubeUploadSessionUrl")
+    ):
+        raise RuntimeError("A failed task with an existing rendered result or YouTube upload state cannot be retried automatically.")
     sections = task.get("sections")
     if not isinstance(sections, list) or len(sections) != 12:
         raise RuntimeError("A long video must contain exactly 12 narration sections.")
@@ -276,10 +285,37 @@ def run(task_id: str) -> int:
                 "narration": "assets/" + audio_path.name,
             })
 
+        thumbnail_source = assets / "thumbnail-source.img"
         thumbnail_path = assets / "thumbnail.png"
-        total += download_asset(api_base, token, thumbnail["assetKey"], thumbnail_path)
+        total += download_asset(api_base, token, thumbnail["assetKey"], thumbnail_source)
         if total > MAX_TOTAL_BYTES:
             raise RuntimeError("Total media downloads exceeded the worker limit.")
+
+        # The image provider's encoded output can vary by format. Cloudflare's
+        # private thumbnail endpoint intentionally accepts PNG only, so normalize
+        # every generated thumbnail to a real 1280x720 PNG before uploading.
+        import subprocess
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", str(thumbnail_source),
+                "-frames:v", "1",
+                "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+                "-c:v", "png", "-compression_level", "9",
+                str(thumbnail_path),
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if thumbnail_path.stat().st_size > 12 * 1024 * 1024:
+            raise RuntimeError("The normalized PNG thumbnail still exceeds Cloudflare's 12 MiB limit.")
+        with thumbnail_path.open("rb") as thumb_file:
+            if thumb_file.read(8) != b"\\x89PNG\\r\\n\\x1a\\n":
+                raise RuntimeError("FFmpeg did not produce a valid PNG thumbnail.")
+        print("Normalized thumbnail PNG:", thumbnail_path.stat().st_size, "bytes")
+
         thumbnail_store = upload_file(
             api_base, token, "/v1/tasks/" + task_id + "/thumbnail",
             thumbnail_path, "image/png", 12 * 1024 * 1024
