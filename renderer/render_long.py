@@ -218,7 +218,7 @@ def render_scene(section: dict[str, Any], duration: float, index: int, root: Pat
         )
     filters.append(
         "subtitles=" + ffmpeg_path(caption) +
-        ":force_style='FontName=DejaVu Sans,FontSize=23,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=3,Outline=1,Shadow=0,MarginV=42'"
+        ":force_style='FontName=DejaVu Sans,FontSize=23,Bold=0,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginL=80,MarginR=80,MarginV=34,WrapStyle=0'"
     )
     output_path = output / ("section-" + str(index + 1).zfill(2) + ".mp4")
     run([
