@@ -41,6 +41,7 @@ function authorized(request, env) {
     routePath === "/v1/long/produce" ||
     routePath === "/v1/youtube/dispatch-ready" ||
     routePath === "/v1/maintenance/cleanup" ||
+    /^\/v1\/tasks\/[0-9a-f-]{36}\/render-dispatch$/i.test(routePath) ||
     activePiecesMetadataRead;
   const supplied = bearer(request);
 
@@ -705,6 +706,53 @@ async function route(request, env) {
   if (request.method === "POST" && path === "/v1/image") return await generateImage(request, env);
   if (request.method === "POST" && path === "/v1/narration") return await generateNarration(request, env);
   if (request.method === "POST" && path === "/v1/tasks") return await createRenderTask(request, env);
+
+  const renderDispatchMatch = path.match(/^\/v1\/tasks\/([0-9a-f-]{36})\/render-dispatch$/i);
+  if (request.method === "POST" && renderDispatchMatch) {
+    const taskId = renderDispatchMatch[1];
+    const taskKey = "tasks/" + taskId + "/task.json";
+    const task = await getJson(env.MEDIA_BUCKET, taskKey);
+    if (!task) return json({ error: "Task not found." }, 404);
+    if (task.format !== "long") return json({ error: "This recovery route only supports long-video tasks." }, 400);
+    if (task.resultKey || task.status === "ready" || task.youtubeVideoId || task.youtubeUploadSessionUrl) {
+      return json({ error: "A rendered result or YouTube upload state already exists; duplicate render dispatch is blocked." }, 409);
+    }
+    if (task.status !== "failed") return json({ error: "Only failed render tasks can be dispatched for recovery.", status: task.status }, 409);
+
+    const attempts = Number(task.renderAttemptCount || 1);
+    const maxAttempts = Math.max(1, Math.min(3, Number(task.renderMaxAttempts || 3)));
+    if (attempts >= maxAttempts) return json({ error: "Render retry limit reached.", status: "needs_review", attempts, maxAttempts }, 409);
+
+    task.renderAttemptCount = attempts + 1;
+    task.lastRenderError = String(task.error || task.lastRenderError || "").slice(0, 700);
+    delete task.error;
+    task.status = "generating_media";
+    task.renderDispatchState = "dispatching";
+    task.renderRetryStartedAt = new Date().toISOString();
+    task.updatedAt = new Date().toISOString();
+    await putJson(env.MEDIA_BUCKET, taskKey, task);
+
+    try {
+      await githubDispatch(env, env.GITHUB_LONG_WORKFLOW || "ffmpeg-long-production-render.yml", taskId);
+      task.renderDispatchState = "dispatched";
+      task.renderDispatchAt = new Date().toISOString();
+      task.updatedAt = new Date().toISOString();
+      await putJson(env.MEDIA_BUCKET, taskKey, task);
+      return json({ ok: true, taskId, status: task.status, attempt: task.renderAttemptCount, maxAttempts, dispatched: true });
+    } catch (error) {
+      const message = String(error && error.message || error).slice(0, 700);
+      const rejected = /GitHub Actions dispatch failed \(HTTP \d+\)/.test(message);
+      task.renderDispatchState = rejected ? "rejected" : "unknown";
+      task.renderDispatchError = message;
+      if (rejected) {
+        task.status = "failed";
+        task.error = message;
+      }
+      task.updatedAt = new Date().toISOString();
+      await putJson(env.MEDIA_BUCKET, taskKey, task);
+      return json({ ok: false, taskId, status: task.status, dispatchState: task.renderDispatchState, error: message }, rejected ? 502 : 202);
+    }
+  }
 
   const assetMatch = path.match(/^\/v1\/assets\/(.+)$/);
   if (request.method === "GET" && assetMatch) {
