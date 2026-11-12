@@ -324,7 +324,7 @@ def run(task_id: str) -> int:
         if thumbnail_path.stat().st_size > 12 * 1024 * 1024:
             raise RuntimeError("The normalized PNG thumbnail still exceeds Cloudflare's 12 MiB limit.")
         with thumbnail_path.open("rb") as thumb_file:
-            if thumb_file.read(8) != b"\\x89PNG\\r\\n\\x1a\\n":
+            if thumb_file.read(8) != b"\x89PNG\r\n\x1a\n":
                 raise RuntimeError("FFmpeg did not produce a valid PNG thumbnail.")
         print("Normalized thumbnail PNG:", thumbnail_path.stat().st_size, "bytes")
 
